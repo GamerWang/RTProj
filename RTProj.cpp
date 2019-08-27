@@ -5,6 +5,8 @@
 #include "tinyxml.h"
 
 #include <stdio.h>
+#include <chrono>
+#include <iostream>
 
 Node rootNode;
 Camera camera;
@@ -154,6 +156,8 @@ float CalculatePixelZ(int posX, int posY) {
 }
 
 void BeginRender() {
+	auto start = std::chrono::system_clock::now();
+
 	csInfo.Init(camera);
 
 	int width = renderImage.GetWidth();
@@ -171,6 +175,10 @@ void BeginRender() {
 	}
 
 	renderImage.ComputeZBufferImage();
+
+	auto end = std::chrono::system_clock::now();
+	std::chrono::duration<double> elapsed_seconds = end - start;
+	std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
 }
 
 void StopRender() {
