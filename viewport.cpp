@@ -363,6 +363,8 @@ void GlutKeyboard(unsigned char key, int x, int y)
 	case '4':
 		renderImage.SaveImage("prj1.PNG");
 		break;
+	case '5':
+		renderImage.SaveZImage("prj1z.PNG");
 	}
 }
 

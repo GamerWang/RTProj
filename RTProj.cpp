@@ -64,7 +64,7 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 			// Temp: only hit detect
 			if (hitSide == HIT_FRONT) {
 				if (k1 >= 0) {
-					hInfo.z = k1;
+					hInfo.z = k1 < hInfo.z ? k1 : hInfo.z;
 					hInfo.front = true;
 					return true;
 				}
@@ -74,7 +74,7 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 			}
 			else if (hitSide == HIT_BACK) {
 				if (k2 >= 0) {
-					hInfo.z = k2;
+					hInfo.z = -k2;
 					hInfo.front = false;
 					return true;
 				}
@@ -112,7 +112,7 @@ bool RayToNode(Ray const &ray, HitInfo &hInfo, Node *node) {
 	}
 }
 
-Color24 CalculatePixel(int posX, int posY) {
+Color24 CalculatePixelHit(int posX, int posY) {
 	Color c = Color();
 
 	Vec3f rayp = camera.pos;
@@ -135,19 +135,42 @@ Color24 CalculatePixel(int posX, int posY) {
 	return color;
 }
 
+float CalculatePixelZ(int posX, int posY) {
+	float z = BIGFLOAT;
+
+	Vec3f rayp = camera.pos;
+	Vec3f rayd = csInfo.GetPixelDir(posX, posY);
+
+	Ray r = Ray(rayp, rayd);
+	HitInfo h = HitInfo();
+
+	bool result = RayToNode(r, h, &rootNode);
+
+	if (result) {
+		z = h.z;
+	}
+
+	return z;
+}
+
 void BeginRender() {
 	csInfo.Init(camera);
 
 	int width = renderImage.GetWidth();
 	int height = renderImage.GetHeight();
 	Color24* img = renderImage.GetPixels();
+	float* zBuffer = renderImage.GetZBuffer();
 
 	for (int j = 0; j < height; j++) {
 		for (int i = 0; i < width; i++) {
-			Color24 c = CalculatePixel(i, j);
+			Color24 c = CalculatePixelHit(i, j);
 			img[j * width + i] = c;
+			float z = CalculatePixelZ(i, j);
+			zBuffer[j * width + i] = z;
 		}
 	}
+
+	renderImage.ComputeZBufferImage();
 }
 
 void StopRender() {
