@@ -35,6 +35,9 @@
     <Xml Include="test.xml">
       <Filter>Resource Files</Filter>
     </Xml>
+    <Xml Include="prj2.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cyVector.h">
@@ -104,6 +107,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="scene.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="materials.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lights.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

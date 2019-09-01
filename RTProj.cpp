@@ -3,6 +3,7 @@
 #include "scene.h"
 #include "objects.h"
 #include "tinyxml.h"
+#include "materials.h"
 
 #include <stdio.h>
 #include <chrono>
@@ -12,6 +13,8 @@ Node rootNode;
 Camera camera;
 RenderImage renderImage;
 Sphere theSphere;
+LightList lights;
+MaterialList materials;
 
 int LoadScene(char const *filename);
 void ShowViewport();
@@ -45,7 +48,7 @@ CameraSpaceInfo csInfo;
 
 int main(int argc, char *argv[])
 {
-	LoadScene(".\\prj1.xml");
+	LoadScene(".\\prj2.xml");
 	ShowViewport();
 	return 0;
 }
@@ -66,8 +69,16 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 			// Temp: only hit detect
 			if (hitSide == HIT_FRONT) {
 				if (k1 >= 0) {
-					hInfo.z = k1 < hInfo.z ? k1 : hInfo.z;
-					hInfo.front = true;
+					if (k1 < hInfo.z) {
+						hInfo.z = k1;
+						hInfo.p = ray.p + ray.dir * k1;
+						hInfo.N = hInfo.p;
+						hInfo.front = true;
+						return true;
+					}
+					else {
+						return false;
+					}
 					return true;
 				}
 				else {
@@ -92,7 +103,25 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 	}
 }
 
-bool RayToNode(Ray const &ray, HitInfo &hInfo, Node *node) {
+Color MtlBlinn::Shade(Ray const &ray, const HitInfo &hInfo, const LightList &lights) const {
+	Color c = Color(0, 0, 0);
+
+	for (int i = 0; i < lights.size(); i++) {
+		Color currentC = Color(0, 0, 0);
+		Light* l = lights[i];
+		if (l->IsAmbient()) {
+			currentC += l->Illuminate(hInfo.p, hInfo.N);
+		}
+		else {
+			Color illu = l->Illuminate(hInfo.p, hInfo.N);
+			
+		}
+		c += currentC;
+	}
+	return c;
+}
+
+bool RayToNode(Ray &ray, HitInfo &hInfo, Node *node) {
 	Object *obj = node->GetNodeObj();
 	Ray r = node->ToNodeCoords(ray);
 
@@ -100,6 +129,12 @@ bool RayToNode(Ray const &ray, HitInfo &hInfo, Node *node) {
 
 	if (obj) {
 		hResult = obj->IntersectRay(r, hInfo);
+	}
+
+	if (hResult) {
+		hInfo.node = node;
+		ray.dir = r.dir;
+		ray.p = r.p;
 	}
 
 	for (int i = 0; i < node->GetNumChild(); i++) {
@@ -114,6 +149,23 @@ bool RayToNode(Ray const &ray, HitInfo &hInfo, Node *node) {
 	}
 }
 
+void TransToNode(Ray &ray, Node* startNode, const Node* aimNode) {
+	Node* currentParent = startNode;
+	Node* currentChild = nullptr;
+}
+
+Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node) {
+	Color c = Color(0, 0, 0);
+
+	bool hResult = RayToNode(ray, hInfo, node);
+	if (hResult) {
+		const Node* hitNode = hInfo.node;
+		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights);
+	}
+
+	return c;
+}
+
 Color24 CalculatePixelHit(int posX, int posY) {
 	Color c = Color();
 
@@ -123,7 +175,6 @@ Color24 CalculatePixelHit(int posX, int posY) {
 	Ray r = Ray(rayp, rayd);
 	HitInfo h = HitInfo();
 
-	//Temp: only hit detect
 	bool result = RayToNode(r, h, &rootNode);
 
 	if (result) {
@@ -132,6 +183,21 @@ Color24 CalculatePixelHit(int posX, int posY) {
 	else {
 		c = Color().Black();
 	}
+
+	Color24 color = Color24(c);
+	return color;
+}
+
+Color24 CalculatePixelColor(int posX, int posY) {
+	Color c = Color();
+
+	Vec3f rayp = camera.pos;
+	Vec3f rayd = csInfo.GetPixelDir(posX, posY);
+
+	Ray r = Ray(rayp, rayd);
+	HitInfo h = HitInfo();
+
+	c = ShadePixel(r, h, &rootNode);
 
 	Color24 color = Color24(c);
 	return color;
@@ -167,7 +233,7 @@ void BeginRender() {
 
 	for (int j = 0; j < height; j++) {
 		for (int i = 0; i < width; i++) {
-			Color24 c = CalculatePixelHit(i, j);
+			Color24 c = CalculatePixelColor(i, j);
 			img[j * width + i] = c;
 			float z = CalculatePixelZ(i, j);
 			zBuffer[j * width + i] = z;

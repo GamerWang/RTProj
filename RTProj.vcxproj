@@ -175,6 +175,7 @@
   </ItemGroup>
   <ItemGroup>
     <Xml Include="prj1.xml" />
+    <Xml Include="prj2.xml" />
     <Xml Include="test.xml" />
   </ItemGroup>
   <ItemGroup>
@@ -198,7 +199,9 @@
     <ClInclude Include="cyTimer.h" />
     <ClInclude Include="cyTriMesh.h" />
     <ClInclude Include="cyVector.h" />
+    <ClInclude Include="lights.h" />
     <ClInclude Include="lodepng.h" />
+    <ClInclude Include="materials.h" />
     <ClInclude Include="objects.h" />
     <ClInclude Include="scene.h" />
   </ItemGroup>
