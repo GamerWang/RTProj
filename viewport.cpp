@@ -370,6 +370,12 @@ void GlutKeyboard(unsigned char key, int x, int y)
 		viewMode = VIEWMODE_Z;
 		glutPostRedisplay();
 		break;
+	case '4':
+		renderImage.SaveImage("./Release/prj1.png");
+		break;
+	case '5':
+		renderImage.SaveZImage("./Release/prj1Z.png");
+		break;
 	}
 }
 

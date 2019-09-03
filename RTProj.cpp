@@ -49,6 +49,8 @@ CameraSpaceInfo csInfo;
 int main(int argc, char *argv[])
 {
 	LoadScene(".\\prj2.xml");
+	//LoadScene(".\\test.xml");
+
 	ShowViewport();
 	return 0;
 }
@@ -59,13 +61,19 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 		return false;
 	}
 	else {
-		float delta = 4 * ray.p.Dot(ray.dir) * ray.dir.Dot(ray.p) - 4 * ray.dir.Dot(ray.dir) * (ray.p.Dot(ray.p) - 1);
+		float a = ray.dir.Dot(ray.dir);
+		float b = 2 * ray.p.Dot(ray.dir);
+		float c = ray.p.Dot(ray.p) - 1;
+		//float delta = 4 * ray.p.Dot(ray.dir) * ray.dir.Dot(ray.p) - 4 * ray.dir.Dot(ray.dir) * (ray.p.Dot(ray.p) - 1);
+		float delta = b * b - 4 * a * c;
 		if (delta < 0) {
 			return false;
 		}
 		else {
-			float k1 = (-2 * ray.p.Dot(ray.dir) - sqrt(delta)) / (ray.dir.Dot(ray.dir));
-			float k2 = (-2 * ray.p.Dot(ray.dir) + sqrt(delta)) / (ray.dir.Dot(ray.dir));
+			//float k1 = (-2 * ray.p.Dot(ray.dir) - sqrt(delta)) / (ray.dir.Dot(ray.dir));
+			//float k2 = (-2 * ray.p.Dot(ray.dir) + sqrt(delta)) / (ray.dir.Dot(ray.dir));
+			float k1 = (-b - sqrt(delta)) / (2 * a);
+			float k2 = (-b + sqrt(delta)) / (2 * a);
 			// Temp: only hit detect
 			if (hitSide == HIT_FRONT) {
 				if (k1 >= 0) {
@@ -103,18 +111,42 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 	}
 }
 
-Color MtlBlinn::Shade(Ray const &ray, const HitInfo &hInfo, const LightList &lights) const {
+Color MtlBlinn::Shade(Ray const &ray, const HitInfo &hInfo, const LightList &lightsUsing) const {
 	Color c = Color(0, 0, 0);
 
-	for (int i = 0; i < lights.size(); i++) {
+	for (int i = 0; i < lightsUsing.size(); i++) {
 		Color currentC = Color(0, 0, 0);
-		Light* l = lights[i];
+		Light* l = lightsUsing[i];
 		if (l->IsAmbient()) {
-			currentC += l->Illuminate(hInfo.p, hInfo.N);
+			currentC += l->Illuminate(hInfo.p, hInfo.N) * diffuse;
 		}
 		else {
 			Color illu = l->Illuminate(hInfo.p, hInfo.N);
-			
+			Color diff = Color(0, 0, 0);
+			Color spec = Color(0, 0, 0);
+
+			Vec3f lDir = l->Direction(hInfo.p) * -1;
+			Vec3f vDir = - ray.dir;
+			Vec3f nDir = hInfo.N.GetNormalized();
+			Vec3f hDir = (vDir + lDir);
+			hDir = hDir / hDir.Length();
+
+			float cosF = lDir.GetNormalized().Dot(nDir.GetNormalized());
+			if (cosF <= 0)
+				cosF = 0;
+			else {
+				diff = illu * cosF;
+				float specValue = hDir.Dot(nDir);
+				if (specValue < 0)
+					specValue = 0;
+				else {
+					specValue = pow(specValue, glossiness);
+				}
+				spec = illu * specValue;
+			}
+
+			currentC += diff * diffuse;
+			currentC += spec * specular;
 		}
 		c += currentC;
 	}
@@ -123,22 +155,24 @@ Color MtlBlinn::Shade(Ray const &ray, const HitInfo &hInfo, const LightList &lig
 
 bool RayToNode(Ray &ray, HitInfo &hInfo, Node *node) {
 	Object *obj = node->GetNodeObj();
-	Ray r = node->ToNodeCoords(ray);
 
 	bool hResult = false;
 
 	if (obj) {
-		hResult = obj->IntersectRay(r, hInfo);
+		hResult = obj->IntersectRay(ray, hInfo);
 	}
-
 	if (hResult) {
 		hInfo.node = node;
-		ray.dir = r.dir;
-		ray.p = r.p;
+		node->FromNodeCoords(hInfo);
 	}
 
 	for (int i = 0; i < node->GetNumChild(); i++) {
-		hResult = hResult || RayToNode(r, hInfo, node->GetChild(i));
+		Ray r = node->GetChild(i)->ToNodeCoords(ray);
+		bool childResult = RayToNode(r, hInfo, node->GetChild(i));
+		if (childResult) {
+			hResult = childResult;
+			node->FromNodeCoords(hInfo);
+		}
 	}
 
 	if (hResult) {
