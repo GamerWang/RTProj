@@ -32,10 +32,16 @@
     <Xml Include="prj1.xml">
       <Filter>Resource Files</Filter>
     </Xml>
-    <Xml Include="test.xml">
+    <Xml Include="prj2.xml">
       <Filter>Resource Files</Filter>
     </Xml>
-    <Xml Include="prj2.xml">
+    <Xml Include="prj3.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
+    <Xml Include="test3.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
+    <Xml Include="test1.xml">
       <Filter>Resource Files</Filter>
     </Xml>
   </ItemGroup>

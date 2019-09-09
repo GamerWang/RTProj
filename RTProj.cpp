@@ -4,10 +4,15 @@
 #include "objects.h"
 #include "tinyxml.h"
 #include "materials.h"
+#include "lights.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <chrono>
 #include <iostream>
+
+#define bias 0.0001f
+#define longDis 10000.0f
 
 Node rootNode;
 Camera camera;
@@ -15,6 +20,12 @@ RenderImage renderImage;
 Sphere theSphere;
 LightList lights;
 MaterialList materials;
+
+//char prjName[] = "test3";
+char prjName[] = "prj3";
+char prjSource[30];
+char prjRender[30];
+char prjZRender[30];
 
 int LoadScene(char const *filename);
 void ShowViewport();
@@ -46,15 +57,25 @@ public:
 };
 CameraSpaceInfo csInfo;
 
+// Main Function
 int main(int argc, char *argv[])
 {
-	LoadScene(".\\prj2.xml");
-	//LoadScene(".\\test.xml");
+	strcpy_s(prjSource, prjName);
+	strcat_s(prjSource, ".xml");
+
+	strcpy_s(prjRender, "./Release/");
+	strcat_s(prjRender, prjName);
+	strcpy_s(prjZRender, prjRender);
+	strcat_s(prjRender, ".png");
+	strcat_s(prjZRender, "Z.png");
+
+	LoadScene(prjSource);
 
 	ShowViewport();
 	return 0;
 }
 
+// Outside Function
 bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 {
 	if (hitSide == HIT_NONE) {
@@ -64,19 +85,16 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 		float a = ray.dir.Dot(ray.dir);
 		float b = 2 * ray.p.Dot(ray.dir);
 		float c = ray.p.Dot(ray.p) - 1;
-		//float delta = 4 * ray.p.Dot(ray.dir) * ray.dir.Dot(ray.p) - 4 * ray.dir.Dot(ray.dir) * (ray.p.Dot(ray.p) - 1);
 		float delta = b * b - 4 * a * c;
 		if (delta < 0) {
 			return false;
 		}
 		else {
-			//float k1 = (-2 * ray.p.Dot(ray.dir) - sqrt(delta)) / (ray.dir.Dot(ray.dir));
-			//float k2 = (-2 * ray.p.Dot(ray.dir) + sqrt(delta)) / (ray.dir.Dot(ray.dir));
+
 			float k1 = (-b - sqrt(delta)) / (2 * a);
 			float k2 = (-b + sqrt(delta)) / (2 * a);
-			// Temp: only hit detect
 			if (hitSide == HIT_FRONT) {
-				if (k1 >= 0) {
+				if (k1 >= bias) {
 					if (k1 < hInfo.z) {
 						hInfo.z = k1;
 						hInfo.p = ray.p + ray.dir * k1;
@@ -94,26 +112,47 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 				}
 			}
 			else if (hitSide == HIT_BACK) {
-				if (k2 >= 0) {
-					hInfo.z = -k2;
-					hInfo.front = false;
-					return true;
+				if (k2 >= bias) {
+					if (k2 < hInfo.z) {
+						hInfo.z = k2;
+						hInfo.p = ray.p + ray.dir * k2;
+						hInfo.N = hInfo.p;
+						hInfo.front = false;
+						return true;
+					}
 				}
 				else {
 					return false;
 				}
 			}
 			else if (hitSide == HIT_FRONT_AND_BACK) {
-				// Temp: deprecated
-				return false;
+				if (k1 >= bias) {
+					if (k1 < hInfo.z) {
+						hInfo.z = k1;
+						hInfo.p = ray.p + ray.dir * k1;
+						hInfo.N = hInfo.p;
+						hInfo.front = true;
+						return true;
+					}
+				} else if(k2 >= bias) {
+					if (k2 < hInfo.z) {
+						hInfo.z = k2;
+						hInfo.p = ray.p + ray.dir * k2;
+						hInfo.N = hInfo.p;
+						hInfo.front = false;
+						return true;
+					}
+				} else {
+					return false;
+				}
 			}
 		}
 	}
 }
 
+// Outside Function
 Color MtlBlinn::Shade(Ray const &ray, const HitInfo &hInfo, const LightList &lightsUsing) const {
 	Color c = Color(0, 0, 0);
-
 	for (int i = 0; i < lightsUsing.size(); i++) {
 		Color currentC = Color(0, 0, 0);
 		Light* l = lightsUsing[i];
@@ -153,6 +192,49 @@ Color MtlBlinn::Shade(Ray const &ray, const HitInfo &hInfo, const LightList &lig
 	return c;
 }
 
+// Shadow Help function
+bool ShadowRayToNode(Ray &ray, HitInfo &hInfo, Node *node) {
+	Object *obj = node->GetNodeObj();
+	bool hResult = false;
+	if (obj) {
+		hResult = obj->IntersectRay(ray, hInfo, HIT_FRONT_AND_BACK);
+	}
+	if (hResult) {
+		if (hInfo.z < 1) {
+			return true;
+		}
+	}
+
+	for (int i = 0; i < node->GetNumChild(); i++) {
+		Ray r = node->GetChild(i)->ToNodeCoords(ray);
+		bool childResult = ShadowRayToNode(r, hInfo, node->GetChild(i));
+		if (childResult) {
+			if (hInfo.z < 1) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+// Outside Function
+float GenLight::Shadow(Ray ray, float t_max) {
+	HitInfo shadowHitInfo = HitInfo();
+	float dis = 1;
+	if (t_max != 1) {
+		ray.Normalize();
+		dis = longDis;
+	}
+	Ray shadowRay = Ray(ray.p, ray.dir * dis);
+	bool hit = ShadowRayToNode(shadowRay, shadowHitInfo, &rootNode);
+
+	if (hit)
+		return 0;
+	else
+		return 1;
+}
+
 bool RayToNode(Ray &ray, HitInfo &hInfo, Node *node) {
 	Object *obj = node->GetNodeObj();
 
@@ -182,6 +264,8 @@ bool RayToNode(Ray &ray, HitInfo &hInfo, Node *node) {
 		return false;
 	}
 }
+
+
 
 void TransToNode(Ray &ray, Node* startNode, const Node* aimNode) {
 	Node* currentParent = startNode;

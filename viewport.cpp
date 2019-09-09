@@ -39,6 +39,8 @@ extern Node rootNode;
 extern Camera camera;
 extern RenderImage renderImage;
 extern LightList lights;
+extern char prjRender[];
+extern char prjZRender[];
 
 //-------------------------------------------------------------------------------
 
@@ -371,10 +373,10 @@ void GlutKeyboard(unsigned char key, int x, int y)
 		glutPostRedisplay();
 		break;
 	case '4':
-		renderImage.SaveImage("./Release/prj1.png");
+		renderImage.SaveImage(prjRender);
 		break;
 	case '5':
-		renderImage.SaveZImage("./Release/prj1Z.png");
+		renderImage.SaveZImage(prjZRender);
 		break;
 	}
 }

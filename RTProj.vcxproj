@@ -176,7 +176,9 @@
   <ItemGroup>
     <Xml Include="prj1.xml" />
     <Xml Include="prj2.xml" />
-    <Xml Include="test.xml" />
+    <Xml Include="prj3.xml" />
+    <Xml Include="test1.xml" />
+    <Xml Include="test3.xml" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cyAlphaDistribution.h" />
