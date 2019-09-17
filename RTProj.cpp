@@ -298,7 +298,7 @@ Color MtlBlinn::Shade(
 					const Node* hitNode = reflectHit.node;
 					reflecC = hitNode->GetMaterial()
 						->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
-					reflecC *= fresnel;
+					reflecC *= (fresnel * refraction + reflection);
 				}
 
 				Ray refracRay = Ray(hInfo.p, refracDir);
@@ -314,7 +314,7 @@ Color MtlBlinn::Shade(
 					float gAbsorb = pow(e_cons, -absorption.g * dis);
 					float bAbsorb = pow(e_cons, -absorption.b * dis);
 					Color remainC = Color(rAbsorb, gAbsorb, bAbsorb);
-					refracC *= (1 - fresnel) * remainC;
+					refracC *= ((1 - fresnel) * remainC * refraction);
 				}
 				currentC += reflecC;
 				currentC += refracC;
