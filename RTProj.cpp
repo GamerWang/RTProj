@@ -19,11 +19,13 @@ Node rootNode;
 Camera camera;
 RenderImage renderImage;
 Sphere theSphere;
+Plane thePlane;
 LightList lights;
 MaterialList materials;
+ItemFileList<Object> objList;
 
-//char prjName[] = "test3";
-char prjName[] = "prj4";
+char prjName[] = "test5";
+//char prjName[] = "prj5";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
@@ -338,7 +340,7 @@ Color MtlBlinn::Shade(
 					Vec3f hDir = (vDir + lDir);
 					hDir = hDir / hDir.Length();
 
-					float cosF = lDir.GetNormalized().Dot(nDir.GetNormalized());
+					float cosF = lDir.GetNormalized().Dot(nDir);
 					if (cosF <= 0)
 						cosF = 0;
 					else {
@@ -486,6 +488,215 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 	}
 }
 
+bool TriObj::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
+{
+	if (hitSide == HIT_NONE) {
+		return false;
+	}
+	else {
+		bool hit = false;
+		Vec3f p = ray.p;
+		Vec3f d = ray.dir;
+		for (unsigned int i = 0; i < nf; i++) {
+			Vec3f v0 = v[f[i].v[0]];
+			Vec3f v1 = v[f[i].v[1]];
+			Vec3f v2 = v[f[i].v[2]];
+
+			Vec3f n = (v1 - v0).Cross(v2 - v0);
+			float h = -n.Dot(v0);
+			float t = -(p.Dot(n) + h) / (d.Dot(n));
+
+			float NdotD = d.Dot(n);
+
+			if (NdotD == 0) {
+				continue;
+			}
+
+			if (t < bias) {
+				continue;
+			}
+
+			Vec3f x = p + t * d;
+
+			Vec2f v0d;
+			Vec2f v1d;
+			Vec2f v2d;
+			Vec2f xd;
+			
+			//Vec3f drop = Vec3f(1, 1, 1);
+			if (n.x > n.y) {
+				if (n.x > n.z) {
+					//drop = Vec3f(0, 1, 1);
+					v0d = Vec2f(v0.y, v0.z);
+					v1d = Vec2f(v1.y, v1.z);
+					v2d = Vec2f(v2.y, v2.z);
+					xd = Vec2f(x.y, x.z);
+				}
+				else {
+					//drop = Vec3f(1, 1, 0);
+					v0d = Vec2f(v0.x, v0.y);
+					v1d = Vec2f(v1.x, v1.y);
+					v2d = Vec2f(v2.x, v2.y);
+					xd = Vec2f(x.x, x.y);
+				}
+			}
+			else {
+				if (n.y > n.z) {
+					//drop = Vec3f(1, 0, 1);
+					v0d = Vec2f(v0.x, v0.z);
+					v1d = Vec2f(v1.x, v1.z);
+					v2d = Vec2f(v2.x, v2.z);
+					xd = Vec2f(x.x, x.z);
+				}
+				else {
+					//drop = Vec3f(1, 1, 0);
+					v0d = Vec2f(v0.x, v0.y);
+					v1d = Vec2f(v1.x, v1.y);
+					v2d = Vec2f(v2.x, v2.y);
+					xd = Vec2f(x.x, x.y);
+				}
+			}
+			
+			float a0 = (v1d - xd).Cross(v2d - xd);
+			float a1 = (v2d - xd).Cross(v0d - xd);
+			float a2 = (v0d - xd).Cross(v1d - xd);
+
+			if (a0 < 0 || a1 < 0 || a2 < 0) {
+				continue;
+			}
+
+			float aAdd = a0 + a1 + a2;
+
+			Vec3f bc = Vec3f(a0 / aAdd, a1 / aAdd, a2 / aAdd);
+			Vec3f vertexN = GetNormal(i, bc);
+
+			if (hitSide == HIT_FRONT) {
+				if (NdotD > 0) {
+					continue;
+				}
+				if (t < hInfo.z) {
+					hInfo.z = t;
+					hInfo.p = x;
+					hInfo.N = vertexN;
+					hInfo.front = true;
+					hit = true;
+				}
+			}
+			else if (hitSide == HIT_BACK) {
+				if (NdotD < 0) {
+					continue;
+				}
+				if (t < hInfo.z) {
+					hInfo.z = t;
+					hInfo.p = x;
+					hInfo.N = vertexN;
+					hInfo.front = false;
+					hit = true;
+				}
+			}
+			else if (hitSide == HIT_FRONT_AND_BACK) {
+				if (t < hInfo.z) {
+					hInfo.z = t;
+					hInfo.p = x;
+					hInfo.N = vertexN;
+					hInfo.front = NdotD < 0;
+					hit = true;
+				}
+			}
+		}
+		return hit;
+	}
+}
+
+bool Plane::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
+{
+	if (hitSide == HIT_NONE) {
+		return false;
+	}
+	else {
+		Vec3f n = Vec3f(0, 0, 1);
+		float h = 0;
+		Vec3f p = ray.p;
+		Vec3f d = ray.dir;
+
+		float NdotD = d.Dot(n);
+		if (NdotD == 0) {
+			return false;
+		}
+
+		float t = -(p.Dot(n) + h) / NdotD;
+		if (t < bias) {
+			return false;
+		}
+
+		Vec3f x = p + d * t;
+		x *= Vec3f(1, 1, 0);
+		Vec3f corner1 = Vec3f(-1, -1, 0);
+		Vec3f corner2 = Vec3f(1, -1, 0);
+		Vec3f corner3 = Vec3f(1, 1, 0);
+		Vec3f corner4 = Vec3f(-1, 1, 0);
+
+		bool hitOnPlane = true;
+		if ((corner1 - x).Cross(corner2 - x).z < 0) {
+			hitOnPlane = false;
+		}
+		if ((corner2 - x).Cross(corner3 - x).z < 0) {
+			hitOnPlane = false;
+		}
+		if ((corner3 - x).Cross(corner4 - x).z < 0) {
+			hitOnPlane = false;
+		}
+		if ((corner4 - x).Cross(corner1 - x).z < 0) {
+			hitOnPlane = false;
+		}
+
+		if (!hitOnPlane) {
+			return false;
+		}
+
+		if (hitSide == HIT_FRONT) {
+			if (NdotD > 0) {
+				return false;
+			}
+			else {
+				if (t < hInfo.z) {
+					hInfo.z = t;
+					hInfo.p = x;
+					hInfo.N = n;
+					hInfo.front = true;
+					return true;
+				}
+				return false;
+			}
+		}
+		else if (hitSide == HIT_BACK) {
+			if (NdotD < 0) {
+				return false;
+			}
+			else {
+				if (t < hInfo.z) {
+					hInfo.z = t;
+					hInfo.p = x;
+					hInfo.N = n;
+					hInfo.front = false;
+					return true;
+				}
+				return false;
+			}
+		}
+		else if (hitSide == HIT_FRONT_AND_BACK) {
+			if (t < hInfo.z) {
+				hInfo.z = t;
+				hInfo.p = x;
+				hInfo.N = n;
+				hInfo.front = NdotD < 0;
+				return true;
+			}
+			return false;
+		}
+	}
+}
+
 float GenLight::Shadow(Ray ray, float t_max) {
 	HitInfo shadowHitInfo = HitInfo();
 	float dis = 1;
@@ -493,6 +704,7 @@ float GenLight::Shadow(Ray ray, float t_max) {
 		ray.Normalize();
 		dis = longDis;
 	}
+
 	Ray shadowRay = Ray(ray.p, ray.dir * dis);
 	bool hit = ShadowRayToNode(shadowRay, shadowHitInfo, &rootNode);
 

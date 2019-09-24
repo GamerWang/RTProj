@@ -1,8 +1,9 @@
+
 //-------------------------------------------------------------------------------
 ///
 /// \file       viewport.cpp 
 /// \author     Cem Yuksel (www.cemyuksel.com)
-/// \version    2.0
+/// \version    5.0
 /// \date       August 21, 2019
 ///
 /// \brief Example source for CS 6620 - University of Utah.
@@ -32,22 +33,24 @@
 
 //-------------------------------------------------------------------------------
 
-void BeginRender();	// Called to start rendering (renderer must run in a separate thread)
-void StopRender();	// Called to end rendering (if it is not already finished)
+void BeginRender(); // Called to start rendering (renderer must run in a separate thread)
+void StopRender();  // Called to end rendering (if it is not already finished)
 
 extern Node rootNode;
 extern Camera camera;
 extern RenderImage renderImage;
 extern LightList lights;
+
 extern char prjRender[];
 extern char prjZRender[];
+
 
 //-------------------------------------------------------------------------------
 
 enum Mode {
-	MODE_READY,			// Ready to render
-	MODE_RENDERING,		// Rendering the image
-	MODE_RENDER_DONE	// Rendering is finished
+	MODE_READY,         // Ready to render
+	MODE_RENDERING,     // Rendering the image
+	MODE_RENDER_DONE    // Rendering is finished
 };
 
 enum ViewMode
@@ -63,10 +66,10 @@ enum MouseMode {
 	MOUSEMODE_ROTATE,
 };
 
-static Mode		mode = MODE_READY;		// Rendering mode
-static ViewMode	viewMode = VIEWMODE_OPENGL;	// Display mode
-static MouseMode mouseMode = MOUSEMODE_NONE;	// Mouse mode
-static int		startTime;						// Start time of rendering
+static Mode     mode = MODE_READY;       // Rendering mode
+static ViewMode viewMode = VIEWMODE_OPENGL;  // Display mode
+static MouseMode mouseMode = MOUSEMODE_NONE;   // Mouse mode
+static int      startTime;                      // Start time of rendering
 static int mouseX = 0, mouseY = 0;
 static float viewAngle1 = 0, viewAngle2 = 0;
 static GLuint viewTexture;
@@ -324,7 +327,7 @@ void GlutIdle()
 void GlutKeyboard(unsigned char key, int x, int y)
 {
 	switch (key) {
-	case 27:	// ESC
+	case 27:    // ESC
 		exit(0);
 		break;
 	case ' ':
@@ -447,7 +450,38 @@ void Sphere::ViewportDisplay(const Material *mtl) const
 	}
 	gluSphere(q, 1, 50, 50);
 }
-
+void Plane::ViewportDisplay(const Material *mtl) const
+{
+	const int resolution = 32;
+	glPushMatrix();
+	glScalef(2.0f / resolution, 2.0f / resolution, 2.0f / resolution);
+	glNormal3f(0, 0, 1);
+	glBegin(GL_QUADS);
+	for (int y = 0; y < resolution; y++) {
+		int yy = y - resolution / 2;
+		for (int x = 0; x < resolution; x++) {
+			int xx = x - resolution / 2;
+			glVertex3i(yy, xx, 0);
+			glVertex3i(yy + 1, xx, 0);
+			glVertex3i(yy + 1, xx + 1, 0);
+			glVertex3i(yy, xx + 1, 0);
+		}
+	}
+	glEnd();
+	glPopMatrix();
+}
+void TriObj::ViewportDisplay(const Material *mtl) const
+{
+	glBegin(GL_TRIANGLES);
+	for (unsigned int i = 0; i < NF(); i++) {
+		for (int j = 0; j < 3; j++) {
+			if (HasTextureVertices()) glTexCoord3fv(&VT(FT(i).v[j]).x);
+			if (HasNormals()) glNormal3fv(&VN(FN(i).v[j]).x);
+			glVertex3fv(&V(F(i).v[j]).x);
+		}
+	}
+	glEnd();
+}
 void MtlBlinn::SetViewportMaterial(int subMtlID) const
 {
 	ColorA c;
