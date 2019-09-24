@@ -1,5 +1,6 @@
 ﻿// Raytracing Prj1 by Xipeng Wang
 #include <GL\freeglut.h>
+#include <omp.h>
 #include "scene.h"
 #include "objects.h"
 #include "tinyxml.h"
@@ -24,8 +25,8 @@ LightList lights;
 MaterialList materials;
 ItemFileList<Object> objList;
 
-char prjName[] = "test5";
-//char prjName[] = "prj5";
+//char prjName[] = "test5";
+char prjName[] = "prj5";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
@@ -63,6 +64,8 @@ CameraSpaceInfo csInfo;
 // Main Function
 int main(int argc, char *argv[])
 {
+	omp_set_num_threads(16);
+
 	strcpy_s(prjSource, prjName);
 	strcat_s(prjSource, ".xml");
 
@@ -216,6 +219,7 @@ void BeginRender() {
 	Color24* img = renderImage.GetPixels();
 	float* zBuffer = renderImage.GetZBuffer();
 
+#pragma omp parallel for
 	for (int j = 0; j < height; j++) {
 		for (int i = 0; i < width; i++) {
 			Color24 c = CalculatePixelColor(i, j);
@@ -503,6 +507,7 @@ bool TriObj::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 			Vec3f v2 = v[f[i].v[2]];
 
 			Vec3f n = (v1 - v0).Cross(v2 - v0);
+
 			float h = -n.Dot(v0);
 			float t = -(p.Dot(n) + h) / (d.Dot(n));
 
@@ -561,7 +566,7 @@ bool TriObj::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 			float a1 = (v2d - xd).Cross(v0d - xd);
 			float a2 = (v0d - xd).Cross(v1d - xd);
 
-			if (a0 < 0 || a1 < 0 || a2 < 0) {
+			if ((!(a0 < 0 && a1 < 0 && a2 < 0))&&(a0 < 0 || a1 < 0 || a2 < 0)) {
 				continue;
 			}
 
