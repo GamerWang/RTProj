@@ -25,6 +25,7 @@ Plane thePlane;
 LightList lights;
 MaterialList materials;
 ItemFileList<Object> objList;
+TimerStats timer;
 
 //char prjName[] = "test6";
 char prjName[] = "prj6";
@@ -328,7 +329,7 @@ void BeginRender() {
 	Color24* img = renderImage.GetPixels();
 	float* zBuffer = renderImage.GetZBuffer();
 
-	TimerStats timer = TimerStats();
+	
 	timer.Start();
 	// build bvh here
 
@@ -344,7 +345,8 @@ void BeginRender() {
 
 	renderImage.ComputeZBufferImage();
 
-	auto end = timer.Stop();
+	timer.Stop();
+	auto end = timer.GetAverage();
 	printf("Elapsed time: %f\n", end);
 }
 
