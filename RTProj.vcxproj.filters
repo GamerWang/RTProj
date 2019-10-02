@@ -53,6 +53,12 @@
     <Xml Include="test5.xml">
       <Filter>Resource Files</Filter>
     </Xml>
+    <Xml Include="test6.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
+    <Xml Include="prj6.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cyVector.h">

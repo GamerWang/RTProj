@@ -183,9 +183,11 @@
     <Xml Include="prj3.xml" />
     <Xml Include="prj4.xml" />
     <Xml Include="prj5.xml" />
+    <Xml Include="prj6.xml" />
     <Xml Include="test1.xml" />
     <Xml Include="test3.xml" />
     <Xml Include="test5.xml" />
+    <Xml Include="test6.xml" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cyAlphaDistribution.h" />
