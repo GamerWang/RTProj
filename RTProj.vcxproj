@@ -172,6 +172,7 @@
   <ItemGroup>
     <ClCompile Include="lodepng.cpp" />
     <ClCompile Include="RTProj.cpp" />
+    <ClCompile Include="texture.cpp" />
     <ClCompile Include="viewport.cpp" />
     <ClCompile Include="xmlload.cpp" />
   </ItemGroup>
@@ -184,10 +185,12 @@
     <Xml Include="prj4.xml" />
     <Xml Include="prj5.xml" />
     <Xml Include="prj6.xml" />
+    <Xml Include="prj7.xml" />
     <Xml Include="test1.xml" />
     <Xml Include="test3.xml" />
     <Xml Include="test5.xml" />
     <Xml Include="test6.xml" />
+    <Xml Include="test7.xml" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cyAlphaDistribution.h" />
@@ -215,6 +218,7 @@
     <ClInclude Include="materials.h" />
     <ClInclude Include="objects.h" />
     <ClInclude Include="scene.h" />
+    <ClInclude Include="texture.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

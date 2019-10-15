@@ -13,7 +13,10 @@
 #include <chrono>
 #include <iostream>
 
-#define bias 0.00095f
+// best bias for prj6
+//#define bias 0.00095f
+// temp bias for prj7
+#define bias 0.00015f
 #define longDis 10000.0f
 #define e_cons 2.718281828f
 
@@ -26,9 +29,12 @@ LightList lights;
 MaterialList materials;
 ItemFileList<Object> objList;
 TimerStats timer;
+TexturedColor background;
+TexturedColor environment;
+TextureList textureList;
 
-//char prjName[] = "test6";
-char prjName[] = "prj6";
+//char prjName[] = "test7";
+char prjName[] = "prj7";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
@@ -86,7 +92,9 @@ int main(int argc, char *argv[])
 // Shadow Help function
 bool ShadowRayToNode(Ray &ray, HitInfo &hInfo, Node *node) {
 	Object *obj = node->GetNodeObj();
+
 	bool hResult = false;
+
 	if (obj) {
 		hResult = obj->IntersectRay(ray, hInfo, HIT_FRONT_AND_BACK);
 	}
@@ -254,13 +262,24 @@ float IntersectBox(const Ray &ray, Box box) {
 	return hit;
 }
 
-Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node) {
+Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node, Vec2f relativePos) {
 	Color c = Color(0, 0, 0);
 
 	bool hResult = RayToNode(ray, hInfo, node);
 	if (hResult) {
 		const Node* hitNode = hInfo.node;
 		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, 5);
+	}
+	else {
+		// cylinder background mapping
+		//Vec3f r = ray.dir;
+		// float u = 1 / (2 * Pi<float>()) * atan2f(r.y, r.x) + 0.5f;
+		// float v = 1 / (Pi<float>()) * asinf(r.z) + 0.5f;
+		//Vec3f uvw = Vec3f(u, v, 0);
+
+		// plane background mapping
+		Vec3f uvw = Vec3f(relativePos, 0);
+		c = background.Sample(uvw);
 	}
 
 	return c;
@@ -297,7 +316,10 @@ Color24 CalculatePixelColor(int posX, int posY) {
 	Ray r = Ray(rayp, rayd);
 	HitInfo h = HitInfo();
 
-	c = ShadePixel(r, h, &rootNode);
+	float relativeX = (float)posX / (float)camera.imgWidth;
+	float relativeY = (float)posY / (float)camera.imgHeight;
+
+	c = ShadePixel(r, h, &rootNode, Vec2f(relativeX, relativeY));
 
 	Color24 color = Color24(c);
 	return color;
@@ -370,7 +392,7 @@ Color MtlBlinn::Shade(
 		reflecDir.Normalize();
 
 		if (hInfo.front == true) {
-			if (reflection.r > 0) {
+			if (reflection.GetColor().r > 0) {
 				Color currentC = Color(0, 0, 0);
 
 				Ray reflecRay = Ray(hInfo.p, reflecDir);
@@ -380,11 +402,14 @@ Color MtlBlinn::Shade(
 					const Node* hitNode = reflectHit.node;
 					currentC = hitNode->GetMaterial()
 						->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
-					currentC *= reflection;
+					currentC *= reflection.GetColor();
+				}
+				else {
+					currentC = environment.SampleEnvironment(reflecDir) * reflection.GetColor();
 				}
 				c += currentC;
 			}
-			if (refraction.r > 0) {
+			if (refraction.GetColor().r > 0) {
 				Color currentC = Color(0, 0, 0);
 
 				float n1 = 1;
@@ -409,7 +434,7 @@ Color MtlBlinn::Shade(
 
 				float r0 = pow(((n1 - n2) / (n1 + n2)), 2);
 				float fresnel = r0 + (1 - r0) * pow((1-cosFi1), 5);
-				float kt = refraction.r;
+				float kt = refraction.GetColor().r;
 
 				Ray reflecRay = Ray(hInfo.p, reflecDir);
 				HitInfo reflectHit = HitInfo();
@@ -418,7 +443,10 @@ Color MtlBlinn::Shade(
 					const Node* hitNode = reflectHit.node;
 					reflecC = hitNode->GetMaterial()
 						->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
-					reflecC *= (fresnel * refraction + reflection);
+					reflecC *= (fresnel * refraction.GetColor() + reflection.GetColor());
+				}
+				else {
+					reflecC = environment.SampleEnvironment(reflecDir) * reflection.GetColor();
 				}
 
 				Ray refracRay = Ray(hInfo.p, refracDir);
@@ -434,7 +462,10 @@ Color MtlBlinn::Shade(
 					float gAbsorb = pow(e_cons, -absorption.g * dis);
 					float bAbsorb = pow(e_cons, -absorption.b * dis);
 					Color remainC = Color(rAbsorb, gAbsorb, bAbsorb);
-					refracC *= ((1 - fresnel) * remainC * refraction);
+					refracC *= ((1 - fresnel) * remainC * refraction.GetColor());
+				}
+				else {
+					refracC = environment.SampleEnvironment(refracDir) * refraction.GetColor();
 				}
 				currentC += reflecC;
 				currentC += refracC;
@@ -445,7 +476,7 @@ Color MtlBlinn::Shade(
 				Color currentC = Color(0, 0, 0);
 				Light* l = lightsUsing[i];
 				if (l->IsAmbient()) {
-					currentC += l->Illuminate(hInfo.p, hInfo.N) * diffuse;
+					currentC += l->Illuminate(hInfo.p, hInfo.N) * diffuse.Sample(hInfo.uvw);
 				}
 				else {
 					Color illu = l->Illuminate(hInfo.p, hInfo.N);
@@ -472,8 +503,8 @@ Color MtlBlinn::Shade(
 						spec = illu * specValue;
 					}
 
-					currentC += diff * diffuse;
-					currentC += spec * specular;
+					currentC += diff * diffuse.Sample(hInfo.uvw);
+					currentC += spec * specular.Sample(hInfo.uvw);
 				}
 				c += currentC;
 			}
@@ -511,6 +542,10 @@ Color MtlBlinn::Shade(
 						->Shade(refracRay, refracHit, lights, bounceCount - 1);
 					currentC += refracC;
 				}
+				else {
+					refracC = environment.SampleEnvironment(refracDir) * refraction.GetColor();
+					currentC += refracC;
+				}
 			}
 			else {
 				Ray reflectRay = Ray(hInfo.p, reflecDir);
@@ -520,6 +555,10 @@ Color MtlBlinn::Shade(
 					const Node* hitNode = reflectHit.node;
 					reflecC = hitNode->GetMaterial()
 						->Shade(reflectRay, reflectHit, lights, bounceCount - 1);
+					currentC += reflecC;
+				}
+				else {
+					reflecC = environment.SampleEnvironment(reflecDir) * reflection.GetColor();
 					currentC += reflecC;
 				}
 			}
@@ -544,7 +583,6 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 			return false;
 		}
 		else {
-
 			float k1 = (-b - sqrt(delta)) / (2 * a);
 			float k2 = (-b + sqrt(delta)) / (2 * a);
 			if (hitSide == HIT_FRONT) {
@@ -553,6 +591,12 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 						hInfo.z = k1;
 						hInfo.p = ray.p + ray.dir * k1;
 						hInfo.N = hInfo.p;
+						float u = 1 / (2 * Pi<float>())*atan2f(hInfo.p.y, hInfo.p.x) + 0.5f;
+						// cylinder mapping
+						//float v = 0.5f * hInfo.p.z + 0.5f;
+						// sphere mapping
+						float v = 1 / Pi<float>() * asinf(hInfo.p.z) + 0.5f;
+						hInfo.uvw = Vec3f(u, v, 0);
 						hInfo.front = true;
 						return true;
 					}
@@ -571,6 +615,12 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 						hInfo.z = k2;
 						hInfo.p = ray.p + ray.dir * k2;
 						hInfo.N = hInfo.p;
+						float u = 1 / (2 * Pi<float>())*atan2f(hInfo.p.y, hInfo.p.x) + 0.5f;
+						// cylinder mapping
+						//float v = 0.5f * hInfo.p.z + 0.5f;
+						// sphere mapping
+						float v = 1 / Pi<float>() * asinf(hInfo.p.z) + 0.5f;
+						hInfo.uvw = Vec3f(u, v, 0);
 						hInfo.front = false;
 						return true;
 					}
@@ -585,6 +635,12 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 						hInfo.z = k1;
 						hInfo.p = ray.p + ray.dir * k1;
 						hInfo.N = hInfo.p;
+						float u = 1 / (2 * Pi<float>())*atan2f(hInfo.p.y, hInfo.p.x) + 0.5f;
+						// cylinder mapping
+						//float v = 0.5f * hInfo.p.z + 0.5f;
+						// sphere mapping
+						float v = 1 / Pi<float>() * asinf(hInfo.p.z) + 0.5f;
+						hInfo.uvw = Vec3f(u, v, 0);
 						hInfo.front = true;
 						return true;
 					}
@@ -594,6 +650,9 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 						hInfo.z = k2;
 						hInfo.p = ray.p + ray.dir * k2;
 						hInfo.N = hInfo.p;
+						float u = 1 / (2 * Pi<float>())*atan2f(hInfo.p.y, hInfo.p.x) + 0.5f;
+						float v = 0.5f * hInfo.p.z + 0.5f;
+						hInfo.uvw = Vec3f(u, v, 0);
 						hInfo.front = false;
 						return true;
 					}
@@ -752,6 +811,7 @@ bool TriObj::IntersectTriangle(Ray const &ray, HitInfo &hInfo, int hitSide, unsi
 
 		Vec3f bc = Vec3f(a0 / aAdd, a1 / aAdd, a2 / aAdd);
 		Vec3f vertexN = GetNormal(faceID, bc);
+		Vec3f uvw = GetTexCoord(faceID, bc);
 
 		if (hitSide == HIT_FRONT) {
 			if (NdotD > 0) {
@@ -761,6 +821,7 @@ bool TriObj::IntersectTriangle(Ray const &ray, HitInfo &hInfo, int hitSide, unsi
 				hInfo.z = t;
 				hInfo.p = x;
 				hInfo.N = vertexN;
+				hInfo.uvw = uvw;
 				hInfo.front = true;
 				hit = true;
 			}
@@ -773,6 +834,7 @@ bool TriObj::IntersectTriangle(Ray const &ray, HitInfo &hInfo, int hitSide, unsi
 				hInfo.z = t;
 				hInfo.p = x;
 				hInfo.N = vertexN;
+				hInfo.uvw = uvw;
 				hInfo.front = false;
 				hit = true;
 			}
@@ -782,6 +844,7 @@ bool TriObj::IntersectTriangle(Ray const &ray, HitInfo &hInfo, int hitSide, unsi
 				hInfo.z = t;
 				hInfo.p = x;
 				hInfo.N = vertexN;
+				hInfo.uvw = uvw;
 				hInfo.front = NdotD < 0;
 				hit = true;
 			}
@@ -845,6 +908,13 @@ bool Plane::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 					hInfo.z = t;
 					hInfo.p = x;
 					hInfo.N = n;
+					// up-left corner uv
+					//float u = (x.x - corner4.x) / 2;
+					//float v = (corner4.y - x.y) / 2;
+					// bottom-left corner uv
+					float u = abs(x.x - corner1.x) / 2;
+					float v = abs(x.y - corner1.y) / 2;
+					hInfo.uvw = Vec3f(u, v, 0);
 					hInfo.front = true;
 					return true;
 				}
@@ -860,6 +930,13 @@ bool Plane::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 					hInfo.z = t;
 					hInfo.p = x;
 					hInfo.N = n;
+					// up-left corner uv
+					// float u = (x.x - corner4.x) / 2;
+					// float v = (corner4.y - x.y) / 2;
+					// bottom-left corner uv
+					float u = abs(x.x - corner1.x) / 2;
+					float v = abs(x.y - corner1.y) / 2;
+					hInfo.uvw = Vec3f(u, v, 0);
 					hInfo.front = false;
 					return true;
 				}
@@ -871,6 +948,13 @@ bool Plane::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 				hInfo.z = t;
 				hInfo.p = x;
 				hInfo.N = n;
+				// up-left corner uv
+				// float u = (x.x - corner4.x) / 2;
+				// float v = (corner4.y - x.y) / 2;
+				// bottom-left corner uv
+				float u = abs(x.x - corner1.x) / 2;
+				float v = abs(x.y - corner1.y) / 2;
+				hInfo.uvw = Vec3f(u, v, 0);
 				hInfo.front = NdotD < 0;
 				return true;
 			}

@@ -27,6 +27,9 @@
     <ClCompile Include="xmlload.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="texture.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Xml Include="prj1.xml">
@@ -57,6 +60,12 @@
       <Filter>Resource Files</Filter>
     </Xml>
     <Xml Include="prj6.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
+    <Xml Include="test7.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
+    <Xml Include="prj7.xml">
       <Filter>Resource Files</Filter>
     </Xml>
   </ItemGroup>
@@ -134,6 +143,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="lights.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="texture.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
