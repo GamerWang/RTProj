@@ -16,9 +16,10 @@
 // best bias for prj6
 //#define bias 0.00095f
 // temp bias for prj7
-#define bias 0.00015f
+#define bias 0.00035f
 #define longDis 10000.0f
 #define e_cons 2.718281828f
+#define deltaOffset 0.01f
 
 Node rootNode;
 Camera camera;
@@ -62,8 +63,8 @@ public:
 		py = c.up * -1 * halfHeight * 2 / c.imgHeight;
 	}
 
-	Vec3f GetPixelDir(int posX, int posY) {
-		Vec3f d = lc + px * ((float)posX + 0.5f) + py * ((float)posY + 0.5f);
+	Vec3f GetPixelDir(float posX, float posY) {
+		Vec3f d = lc + px * (posX + 0.5f) + py * (posY + 0.5f);
 		return d;
 	}
 };
@@ -262,11 +263,56 @@ float IntersectBox(const Ray &ray, Box box) {
 	return hit;
 }
 
+// Without Ray Differential
 Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node, Vec2f relativePos) {
 	Color c = Color(0, 0, 0);
 
 	bool hResult = RayToNode(ray, hInfo, node);
 	if (hResult) {
+		const Node* hitNode = hInfo.node;
+		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, 5);
+	}
+	else {
+		// cylinder background mapping
+		//Vec3f r = ray.dir;
+		// float u = 1 / (2 * Pi<float>()) * atan2f(r.y, r.x) + 0.5f;
+		// float v = 1 / (Pi<float>()) * asinf(r.z) + 0.5f;
+		//Vec3f uvw = Vec3f(u, v, 0);
+
+		// plane background mapping
+		Vec3f uvw = Vec3f(relativePos, 0);
+		c = background.Sample(uvw);
+	}
+
+	return c;
+}
+
+// With Ray Differential
+Color ShadePixelRayDiff(Ray &ray, Ray *drays , HitInfo &hInfo, Node *node, Vec2f relativePos) {
+	Color c = Color(0, 0, 0);
+
+	bool hResult = RayToNode(ray, hInfo, node);
+	if (hResult) {
+		HitInfo dInfoX = HitInfo();
+		Vec3f uvwX = Vec3f();
+		HitInfo dInfoY = HitInfo();
+		Vec3f uvwY = Vec3f();
+		bool xHit = RayToNode(drays[0], dInfoX, node);
+		if (xHit) {
+			if (dInfoX.node == hInfo.node) {
+				uvwX = dInfoX.uvw - hInfo.uvw;
+				uvwX /= deltaOffset;
+			}
+		}
+		bool yHit = RayToNode(drays[1], dInfoY, node);
+		if (yHit) {
+			if (dInfoY.node == hInfo.node) {
+				uvwY = dInfoY.uvw - hInfo.uvw;
+				uvwY /= deltaOffset;
+			}
+		}
+		hInfo.duvw[0] = uvwX;
+		hInfo.duvw[1] = uvwY;
 		const Node* hitNode = hInfo.node;
 		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, 5);
 	}
@@ -314,12 +360,28 @@ Color24 CalculatePixelColor(int posX, int posY) {
 	Vec3f rayd = csInfo.GetPixelDir(posX, posY);
 
 	Ray r = Ray(rayp, rayd);
+	r.Normalize();
 	HitInfo h = HitInfo();
 
 	float relativeX = (float)posX / (float)camera.imgWidth;
 	float relativeY = (float)posY / (float)camera.imgHeight;
 
+	// without sending real rays ray differential
 	c = ShadePixel(r, h, &rootNode, Vec2f(relativeX, relativeY));
+
+	// with simple sending 2 new rays ray differential
+	//Ray* dRays = new Ray[2];
+
+	//Ray dRayX = Ray(rayp, csInfo.GetPixelDir(posX + deltaOffset, posY));
+	//Ray dRayY = Ray(rayp, csInfo.GetPixelDir(posX, posY + deltaOffset));
+
+	//dRayX.Normalize();
+	//dRayY.Normalize();
+
+	//dRays[0] = dRayX;
+	//dRays[1] = dRayY;
+
+	//c = ShadePixelRayDiff(r, dRays, h, &rootNode, Vec2f(relativeX, relativeY));
 
 	Color24 color = Color24(c);
 	return color;
@@ -503,8 +565,8 @@ Color MtlBlinn::Shade(
 						spec = illu * specValue;
 					}
 
-					currentC += diff * diffuse.Sample(hInfo.uvw);
-					currentC += spec * specular.Sample(hInfo.uvw);
+					currentC += diff * diffuse.Sample(hInfo.uvw, hInfo.duvw);
+					currentC += spec * specular.Sample(hInfo.uvw, hInfo.duvw);
 				}
 				c += currentC;
 			}
@@ -813,43 +875,27 @@ bool TriObj::IntersectTriangle(Ray const &ray, HitInfo &hInfo, int hitSide, unsi
 		Vec3f vertexN = GetNormal(faceID, bc);
 		Vec3f uvw = GetTexCoord(faceID, bc);
 
+		if (t > hInfo.z) {
+			return false;
+		}
+
 		if (hitSide == HIT_FRONT) {
 			if (NdotD > 0) {
 				return false;
-			}
-			if (t < hInfo.z) {
-				hInfo.z = t;
-				hInfo.p = x;
-				hInfo.N = vertexN;
-				hInfo.uvw = uvw;
-				hInfo.front = true;
-				hit = true;
 			}
 		}
 		else if (hitSide == HIT_BACK) {
 			if (NdotD < 0) {
 				return false;
 			}
-			if (t < hInfo.z) {
-				hInfo.z = t;
-				hInfo.p = x;
-				hInfo.N = vertexN;
-				hInfo.uvw = uvw;
-				hInfo.front = false;
-				hit = true;
-			}
 		}
-		else if (hitSide == HIT_FRONT_AND_BACK) {
-			if (t < hInfo.z) {
-				hInfo.z = t;
-				hInfo.p = x;
-				hInfo.N = vertexN;
-				hInfo.uvw = uvw;
-				hInfo.front = NdotD < 0;
-				hit = true;
-			}
-		}
-		return hit;
+
+		hInfo.z = t;
+		hInfo.p = x;
+		hInfo.N = vertexN;
+		hInfo.uvw = uvw;
+		hInfo.front = NdotD < 0;
+		return true;
 	}
 }
 
@@ -899,25 +945,12 @@ bool Plane::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 			return false;
 		}
 
+		if (t > hInfo.z) {
+			return false;
+		}
+
 		if (hitSide == HIT_FRONT) {
 			if (NdotD > 0) {
-				return false;
-			}
-			else {
-				if (t < hInfo.z) {
-					hInfo.z = t;
-					hInfo.p = x;
-					hInfo.N = n;
-					// up-left corner uv
-					//float u = (x.x - corner4.x) / 2;
-					//float v = (corner4.y - x.y) / 2;
-					// bottom-left corner uv
-					float u = abs(x.x - corner1.x) / 2;
-					float v = abs(x.y - corner1.y) / 2;
-					hInfo.uvw = Vec3f(u, v, 0);
-					hInfo.front = true;
-					return true;
-				}
 				return false;
 			}
 		}
@@ -925,41 +958,32 @@ bool Plane::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 			if (NdotD < 0) {
 				return false;
 			}
-			else {
-				if (t < hInfo.z) {
-					hInfo.z = t;
-					hInfo.p = x;
-					hInfo.N = n;
-					// up-left corner uv
-					// float u = (x.x - corner4.x) / 2;
-					// float v = (corner4.y - x.y) / 2;
-					// bottom-left corner uv
-					float u = abs(x.x - corner1.x) / 2;
-					float v = abs(x.y - corner1.y) / 2;
-					hInfo.uvw = Vec3f(u, v, 0);
-					hInfo.front = false;
-					return true;
-				}
-				return false;
-			}
 		}
-		else if (hitSide == HIT_FRONT_AND_BACK) {
-			if (t < hInfo.z) {
-				hInfo.z = t;
-				hInfo.p = x;
-				hInfo.N = n;
-				// up-left corner uv
-				// float u = (x.x - corner4.x) / 2;
-				// float v = (corner4.y - x.y) / 2;
-				// bottom-left corner uv
-				float u = abs(x.x - corner1.x) / 2;
-				float v = abs(x.y - corner1.y) / 2;
-				hInfo.uvw = Vec3f(u, v, 0);
-				hInfo.front = NdotD < 0;
-				return true;
-			}
-			return false;
-		}
+
+		hInfo.z = t;
+		hInfo.p = x;
+		hInfo.N = n;
+		// up-left corner uv
+		// float u = (x.x - corner4.x) / 2;
+		// float v = (corner4.y - x.y) / 2;
+		// bottom-left corner uv
+		float u = (x.x - corner1.x) / 2;
+		float v = (x.y - corner1.y) / 2;
+		hInfo.uvw = Vec3f(u, v, 0);
+		hInfo.front = NdotD < 0;
+
+		Vec3f deltaDX = (d.Dot(d) * Vec3f(1, 0, 0) - d.Dot(Vec3f(1, 0, 0)) * d) / pow(d.Dot(d), 1.5f);
+		float deltaTX = -(t * deltaDX).Dot(d / d.Length()) / ((d / d.Length()).Dot(n));
+		Vec3f deltaPX = t * deltaDX + d / d.Length() * deltaTX;
+
+		Vec3f deltaDY = (d.Dot(d) * Vec3f(0, 0, 1) - d.Dot(Vec3f(0, 0, 1)) * d) / pow(d.Dot(d), 1.5f);
+		float deltaTY = -(t * deltaDY).Dot(d / d.Length()) / ((d / d.Length()).Dot(n));
+		Vec3f deltaPY = t * deltaDY + d / d.Length() * deltaTY;
+
+		hInfo.duvw[0] = (deltaPX) / 2.0f;
+		hInfo.duvw[1] = (deltaPY) / 2.0f;
+
+		return true;
 	}
 }
 
