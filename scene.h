@@ -50,11 +50,17 @@ class Ray
 {
 public:
 	Vec3f p, dir;
+	// custom variables for ray differential
+	Vec3f diffRight, diffUp;
 
 	Ray() {}
 	Ray(Vec3f const &_p, Vec3f const &_dir) : p(_p), dir(_dir) {}
 	Ray(Ray const &r) : p(r.p), dir(r.dir) {}
-	void Normalize() { dir.Normalize(); }
+	void Normalize() {
+		diffRight /= dir.Length();
+		diffUp /= dir.Length();
+		dir.Normalize(); 
+	}
 };
 
 //-------------------------------------------------------------------------------
@@ -474,6 +480,8 @@ public:
 		Ray r;
 		r.p = TransformTo(ray.p);
 		r.dir = TransformTo(ray.p + ray.dir) - r.p;
+		r.diffRight = TransformTo(ray.p + ray.diffRight) - r.p;
+		r.diffUp = TransformTo(ray.p + ray.diffUp) - r.p;
 		return r;
 	}
 	void FromNodeCoords(HitInfo &hInfo) const

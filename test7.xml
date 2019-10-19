@@ -11,6 +11,11 @@
       <scale value="1000"/>
       <rotate angle="30" z="1"/>
     </object>
+    <!--<object type="plane" name="mirror" material="mirror">
+      <scale value="20"/>
+      <rotate angle="90" x="1"/>
+      <translate x="0" y="100" z="0"/>
+    </object>-->
     <object type="obj" name="teapot.obj" material="bricks">
       <scale value="0.8"/>
       <rotate angle="-50" z="1"/>
@@ -34,6 +39,12 @@
       </diffuse>
       <specular value="0"/>
       <reflection value="0.5"/>
+    </material>
+    <material type="blinn" name="mirror">
+      <diffuse value="0"/>
+      <specular value="0.8"/>
+      <glossiness value="100"/>
+      <reflection value="0.8"/>
     </material>
     <material type="blinn" name="checkerMtl">
       <diffuse texture="checkerboard">

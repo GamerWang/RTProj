@@ -16,7 +16,7 @@
 // best bias for prj6
 //#define bias 0.00095f
 // temp bias for prj7
-#define bias 0.00035f
+#define bias 0.00045f
 #define longDis 10000.0f
 #define e_cons 2.718281828f
 #define deltaOffset 0.01f
@@ -34,8 +34,8 @@ TexturedColor background;
 TexturedColor environment;
 TextureList textureList;
 
-//char prjName[] = "test7";
-char prjName[] = "prj7";
+char prjName[] = "test7";
+//char prjName[] = "prj7";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
@@ -360,7 +360,13 @@ Color24 CalculatePixelColor(int posX, int posY) {
 	Vec3f rayd = csInfo.GetPixelDir(posX, posY);
 
 	Ray r = Ray(rayp, rayd);
+
+	// diff by passing in right and up vectors
+	r.diffRight = csInfo.px;
+	r.diffUp = -csInfo.py;
+
 	r.Normalize();
+
 	HitInfo h = HitInfo();
 
 	float relativeX = (float)posX / (float)camera.imgWidth;
@@ -458,6 +464,9 @@ Color MtlBlinn::Shade(
 				Color currentC = Color(0, 0, 0);
 
 				Ray reflecRay = Ray(hInfo.p, reflecDir);
+				reflecRay.diffRight = ray.diffRight - 2 * (ray.diffRight.Dot(nDir) * nDir);
+				reflecRay.diffUp = ray.diffUp - 2 * (ray.diffUp.Dot(nDir) * nDir);
+
 				HitInfo reflectHit = HitInfo();
 				bool hResult = RayToNode(reflecRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
 				if (hResult) {
@@ -499,6 +508,9 @@ Color MtlBlinn::Shade(
 				float kt = refraction.GetColor().r;
 
 				Ray reflecRay = Ray(hInfo.p, reflecDir);
+				reflecRay.diffRight = ray.diffRight - 2 * (ray.diffRight.Dot(nDir) * nDir);
+				reflecRay.diffUp = ray.diffUp - 2 * (ray.diffUp.Dot(nDir) * nDir);
+
 				HitInfo reflectHit = HitInfo();
 				bool hResult = RayToNode(reflecRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
 				if (hResult) {
@@ -512,7 +524,11 @@ Color MtlBlinn::Shade(
 				}
 
 				Ray refracRay = Ray(hInfo.p, refracDir);
+				refracRay.diffRight = ray.diffRight;
+				refracRay.diffUp = ray.diffUp;
+
 				HitInfo refracHit = HitInfo();
+
 				hResult = RayToNode(refracRay, refracHit, &rootNode, HIT_FRONT_AND_BACK);
 				if (hResult) {
 					const Node* hitNode = refracHit.node;
@@ -538,7 +554,7 @@ Color MtlBlinn::Shade(
 				Color currentC = Color(0, 0, 0);
 				Light* l = lightsUsing[i];
 				if (l->IsAmbient()) {
-					currentC += l->Illuminate(hInfo.p, hInfo.N) * diffuse.Sample(hInfo.uvw);
+					currentC += l->Illuminate(hInfo.p, hInfo.N) * diffuse.Sample(hInfo.uvw, hInfo.duvw);
 				}
 				else {
 					Color illu = l->Illuminate(hInfo.p, hInfo.N);
@@ -596,7 +612,11 @@ Color MtlBlinn::Shade(
 				Vec3f refracDir = tl + tn;
 
 				Ray refracRay = Ray(hInfo.p, refracDir);
+				refracRay.diffRight = ray.diffRight;
+				refracRay.diffUp = ray.diffUp;
+
 				HitInfo refracHit = HitInfo();
+
 				bool hResult = RayToNode(refracRay, refracHit, &rootNode, HIT_FRONT_AND_BACK);
 				if (hResult) {
 					const Node* hitNode = refracHit.node;
@@ -610,13 +630,17 @@ Color MtlBlinn::Shade(
 				}
 			}
 			else {
-				Ray reflectRay = Ray(hInfo.p, reflecDir);
+				Ray reflecRay = Ray(hInfo.p, reflecDir);
+				reflecRay.diffRight = ray.diffRight - 2 * (ray.diffRight.Dot(nDir) * nDir);
+				reflecRay.diffUp = ray.diffUp - 2 * (ray.diffUp.Dot(nDir) * nDir);
+
 				HitInfo reflectHit = HitInfo();
-				bool hResult = RayToNode(reflectRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
+				
+				bool hResult = RayToNode(reflecRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
 				if (hResult) {
 					const Node* hitNode = reflectHit.node;
 					reflecC = hitNode->GetMaterial()
-						->Shade(reflectRay, reflectHit, lights, bounceCount - 1);
+						->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
 					currentC += reflecC;
 				}
 				else {
@@ -624,7 +648,6 @@ Color MtlBlinn::Shade(
 					currentC += reflecC;
 				}
 			}
-
 			c += currentC;
 		}
 	}
@@ -653,6 +676,7 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 						hInfo.z = k1;
 						hInfo.p = ray.p + ray.dir * k1;
 						hInfo.N = hInfo.p;
+
 						float u = 1 / (2 * Pi<float>())*atan2f(hInfo.p.y, hInfo.p.x) + 0.5f;
 						// cylinder mapping
 						//float v = 0.5f * hInfo.p.z + 0.5f;
@@ -660,6 +684,12 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 						float v = 1 / Pi<float>() * asinf(hInfo.p.z) + 0.5f;
 						hInfo.uvw = Vec3f(u, v, 0);
 						hInfo.front = true;
+
+
+
+						hInfo.duvw[0] = Vec3f(0, 0, 0);
+						hInfo.duvw[1] = Vec3f(0, 0, 0);
+
 						return true;
 					}
 					else {
@@ -684,6 +714,10 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 						float v = 1 / Pi<float>() * asinf(hInfo.p.z) + 0.5f;
 						hInfo.uvw = Vec3f(u, v, 0);
 						hInfo.front = false;
+
+						hInfo.duvw[0] = Vec3f(0, 0, 0);
+						hInfo.duvw[1] = Vec3f(0, 0, 0);
+
 						return true;
 					}
 				}
@@ -703,6 +737,10 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 						// sphere mapping
 						float v = 1 / Pi<float>() * asinf(hInfo.p.z) + 0.5f;
 						hInfo.uvw = Vec3f(u, v, 0);
+
+						hInfo.duvw[0] = Vec3f(0, 0, 0);
+						hInfo.duvw[1] = Vec3f(0, 0, 0);
+
 						hInfo.front = true;
 						return true;
 					}
@@ -715,6 +753,10 @@ bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 						float u = 1 / (2 * Pi<float>())*atan2f(hInfo.p.y, hInfo.p.x) + 0.5f;
 						float v = 0.5f * hInfo.p.z + 0.5f;
 						hInfo.uvw = Vec3f(u, v, 0);
+
+						hInfo.duvw[0] = Vec3f(0, 0, 0);
+						hInfo.duvw[1] = Vec3f(0, 0, 0);
+
 						hInfo.front = false;
 						return true;
 					}
@@ -895,6 +937,10 @@ bool TriObj::IntersectTriangle(Ray const &ray, HitInfo &hInfo, int hitSide, unsi
 		hInfo.N = vertexN;
 		hInfo.uvw = uvw;
 		hInfo.front = NdotD < 0;
+
+		hInfo.duvw[0] = Vec3f(0, 0, 0);
+		hInfo.duvw[1] = Vec3f(0, 0, 0);
+
 		return true;
 	}
 }
@@ -972,13 +1018,24 @@ bool Plane::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 		hInfo.uvw = Vec3f(u, v, 0);
 		hInfo.front = NdotD < 0;
 
-		Vec3f deltaDX = (d.Dot(d) * Vec3f(1, 0, 0) - d.Dot(Vec3f(1, 0, 0)) * d) / pow(d.Dot(d), 1.5f);
-		float deltaTX = -(t * deltaDX).Dot(d / d.Length()) / ((d / d.Length()).Dot(n));
-		Vec3f deltaPX = t * deltaDX + d / d.Length() * deltaTX;
+		Vec3f D = Vec3f(d);
+		D.Normalize();
+		float T = -(p.Dot(n)) / D.Dot(n);
 
-		Vec3f deltaDY = (d.Dot(d) * Vec3f(0, 0, 1) - d.Dot(Vec3f(0, 0, 1)) * d) / pow(d.Dot(d), 1.5f);
-		float deltaTY = -(t * deltaDY).Dot(d / d.Length()) / ((d / d.Length()).Dot(n));
-		Vec3f deltaPY = t * deltaDY + d / d.Length() * deltaTY;
+		// calculate px & py by using passed in right & up vectors
+		Vec3f deltaDX = (d.Dot(d) * (ray.diffRight) - d.Dot(ray.diffRight) * d) / pow(d.Dot(d), 1.5f);
+		Vec3f deltaDY = (d.Dot(d) * (ray.diffUp) - D.Dot(ray.diffUp) * d) / pow(d.Dot(d), 1.5f);
+
+		//printf("diff right: %f\n", deltaDX.x * 10000);
+
+		float deltaTX = -((T * deltaDX).Dot(n)) / (D.Dot(n));
+		float deltaTY = -((T * deltaDY).Dot(n)) / (D.Dot(n));
+
+		//printf("diff right: %f\n", deltaTX * 100000);
+		//printf("diff right: %f\n", T);
+
+		Vec3f deltaPX = T * deltaDX + D * deltaTX;
+		Vec3f deltaPY = T * deltaDY + D * deltaTY;
 
 		hInfo.duvw[0] = (deltaPX) / 2.0f;
 		hInfo.duvw[1] = (deltaPY) / 2.0f;
