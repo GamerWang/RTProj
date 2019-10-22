@@ -68,6 +68,9 @@
     <Xml Include="prj7.xml">
       <Filter>Resource Files</Filter>
     </Xml>
+    <Xml Include="prj8.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cyVector.h">

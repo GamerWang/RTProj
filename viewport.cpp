@@ -1,8 +1,9 @@
+
 //-------------------------------------------------------------------------------
 ///
 /// \file       viewport.cpp 
 /// \author     Cem Yuksel (www.cemyuksel.com)
-/// \version    7.0
+/// \version    8.0
 /// \date       August 21, 2019
 ///
 /// \brief Example source for CS 6620 - University of Utah.
@@ -44,7 +45,7 @@ extern TexturedColor background;
 
 extern char prjRender[];
 extern char prjZRender[];
-
+extern char prjCRender[];
 //-------------------------------------------------------------------------------
 
 enum Mode {
@@ -58,6 +59,7 @@ enum ViewMode
 	VIEWMODE_OPENGL,
 	VIEWMODE_IMAGE,
 	VIEWMODE_Z,
+	VIEWMODE_SAMPLECOUNT,
 };
 
 enum MouseMode {
@@ -89,7 +91,7 @@ void ShowViewport()
 {
 	int argc = 1;
 	char argstr[] = "raytrace";
-	char *argv = argstr;
+	char* argv = argstr;
 	glutInit(&argc, &argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
 	if (glutGet(GLUT_SCREEN_WIDTH) > 0 && glutGet(GLUT_SCREEN_HEIGHT) > 0) {
@@ -149,11 +151,11 @@ void GlutReshape(int w, int h)
 
 //-------------------------------------------------------------------------------
 
-void DrawNode(Node *node)
+void DrawNode(Node* node)
 {
 	glPushMatrix();
 
-	const Material *mtl = node->GetMaterial();
+	const Material* mtl = node->GetMaterial();
 	if (mtl) mtl->SetViewportMaterial();
 
 	Matrix3f tm = node->GetTransform();
@@ -161,7 +163,7 @@ void DrawNode(Node *node)
 	float m[16] = { tm[0],tm[1],tm[2],0, tm[3],tm[4],tm[5],0, tm[6],tm[7],tm[8],0, p.x,p.y,p.z,1 };
 	glMultMatrixf(m);
 
-	Object *obj = node->GetNodeObj();
+	Object* obj = node->GetNodeObj();
 	if (obj) obj->ViewportDisplay(mtl);
 
 	for (int i = 0; i < node->GetNumChild(); i++) {
@@ -177,7 +179,7 @@ void DrawScene()
 {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-	const TextureMap *bgMap = background.GetTexture();
+	const TextureMap* bgMap = background.GetTexture();
 	if (bgMap) {
 		glDepthMask(GL_FALSE);
 		glMatrixMode(GL_PROJECTION);
@@ -255,7 +257,7 @@ void DrawScene()
 
 //-------------------------------------------------------------------------------
 
-void DrawImage(void *data, GLenum type, GLenum format)
+void DrawImage(void* data, GLenum type, GLenum format)
 {
 	glBindTexture(GL_TEXTURE_2D, viewTexture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, renderImage.GetWidth(), renderImage.GetHeight(), 0, format, type, data);
@@ -334,9 +336,12 @@ void GlutDisplay()
 		DrawRenderProgressBar();
 		break;
 	case VIEWMODE_Z:
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 		if (!renderImage.GetZBufferImage()) renderImage.ComputeZBufferImage();
 		DrawImage(renderImage.GetZBufferImage(), GL_UNSIGNED_BYTE, GL_LUMINANCE);
+		break;
+	case VIEWMODE_SAMPLECOUNT:
+		if (!renderImage.GetSampleCountImage()) renderImage.ComputeSampleCountImage();
+		DrawImage(renderImage.GetSampleCountImage(), GL_UNSIGNED_BYTE, GL_LUMINANCE);
 		break;
 	}
 
@@ -382,7 +387,7 @@ void GlutKeyboard(unsigned char key, int x, int y)
 			DrawScene();
 			glReadPixels(0, 0, renderImage.GetWidth(), renderImage.GetHeight(), GL_RGB, GL_UNSIGNED_BYTE, renderImage.GetPixels());
 			{
-				Color24 *c = renderImage.GetPixels();
+				Color24* c = renderImage.GetPixels();
 				for (int y0 = 0, y1 = renderImage.GetHeight() - 1; y0 < y1; y0++, y1--) {
 					int i0 = y0 * renderImage.GetWidth();
 					int i1 = y1 * renderImage.GetWidth();
@@ -420,10 +425,17 @@ void GlutKeyboard(unsigned char key, int x, int y)
 		glutPostRedisplay();
 		break;
 	case '4':
-		renderImage.SaveImage(prjRender);
+		viewMode = VIEWMODE_SAMPLECOUNT;
+		glutPostRedisplay();
 		break;
 	case '5':
+		renderImage.SaveImage(prjRender);
+		break;
+	case '6':
 		renderImage.SaveZImage(prjZRender);
+		break;
+	case '7':
+		renderImage.SaveSampleCountImage(prjCRender);
 		break;
 	}
 }
@@ -433,9 +445,9 @@ void GlutKeyboard(unsigned char key, int x, int y)
 void PrintPixelData(int x, int y)
 {
 	if (x < renderImage.GetWidth() && y < renderImage.GetHeight()) {
-		Color24 *colors = renderImage.GetPixels();
-		float *zbuffer = renderImage.GetZBuffer();
-		int i = (renderImage.GetHeight() - y - 1) *renderImage.GetWidth() + x;
+		Color24* colors = renderImage.GetPixels();
+		float* zbuffer = renderImage.GetZBuffer();
+		int i = (renderImage.GetHeight() - y - 1) * renderImage.GetWidth() + x;
 		printf("Pixel [ %d, %d ] Color24: %d, %d, %d   Z: %f\n", x, y, colors[i].r, colors[i].g, colors[i].b, zbuffer[i]);
 	}
 	else {
@@ -486,16 +498,16 @@ void GlutMotion(int x, int y)
 //-------------------------------------------------------------------------------
 // Viewport Methods for various classes
 //-------------------------------------------------------------------------------
-void Sphere::ViewportDisplay(const Material *mtl) const
+void Sphere::ViewportDisplay(const Material* mtl) const
 {
-	static GLUquadric *q = nullptr;
+	static GLUquadric* q = nullptr;
 	if (q == nullptr) {
 		q = gluNewQuadric();
 		gluQuadricTexture(q, true);
 	}
 	gluSphere(q, 1, 50, 50);
 }
-void Plane::ViewportDisplay(const Material *mtl) const
+void Plane::ViewportDisplay(const Material* mtl) const
 {
 	const int resolution = 32;
 	float xyInc = 2.0f / resolution;
@@ -522,7 +534,7 @@ void Plane::ViewportDisplay(const Material *mtl) const
 	glEnd();
 	glPopMatrix();
 }
-void TriObj::ViewportDisplay(const Material *mtl) const
+void TriObj::ViewportDisplay(const Material* mtl) const
 {
 	unsigned int nextMtlID = 0;
 	unsigned int nextMtlSwith = NF();
@@ -558,8 +570,8 @@ void MtlBlinn::SetViewportMaterial(int subMtlID) const
 	glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, &c.r);
 	c = ColorA(specular.GetColor());
 	glMaterialfv(GL_FRONT, GL_SPECULAR, &c.r);
-	glMaterialf(GL_FRONT, GL_SHININESS, glossiness*1.5f);
-	const TextureMap *dm = diffuse.GetTexture();
+	glMaterialf(GL_FRONT, GL_SHININESS, glossiness * 1.5f);
+	const TextureMap* dm = diffuse.GetTexture();
 	if (dm && dm->SetViewportTexture()) {
 		glEnable(GL_TEXTURE_2D);
 		glMatrixMode(GL_TEXTURE);
@@ -602,9 +614,9 @@ bool TextureChecker::SetViewportTexture() const
 		glGenTextures(1, &viewportTextureID);
 		glBindTexture(GL_TEXTURE_2D, viewportTextureID);
 		Color24 c[2] = { Color24(color1), Color24(color2) };
-		Color24 *tex = new Color24[texSize*texSize];
-		for (int i = 0; i < texSize*texSize; i++) {
-			int ix = (i%texSize) < 128 ? 0 : 1;
+		Color24* tex = new Color24[texSize * texSize];
+		for (int i = 0; i < texSize * texSize; i++) {
+			int ix = (i % texSize) < 128 ? 0 : 1;
 			if (i / 256 >= 128) ix = 1 - ix;
 			tex[i] = c[ix];
 		}

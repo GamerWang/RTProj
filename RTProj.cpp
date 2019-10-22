@@ -20,6 +20,9 @@
 #define longDis 10000.0f
 #define e_cons 2.718281828f
 #define deltaOffset 0.01f
+#define RAND_MAX 10000
+#define max_variance 0.05f
+#define max_sampe_count 64
 
 Node rootNode;
 Camera camera;
@@ -34,11 +37,12 @@ TexturedColor background;
 TexturedColor environment;
 TextureList textureList;
 
-char prjName[] = "test7";
-//char prjName[] = "prj7";
+//char prjName[] = "test7";
+char prjName[] = "prj8";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
+char prjCRender[30];
 
 int LoadScene(char const *filename);
 void ShowViewport();
@@ -81,8 +85,10 @@ int main(int argc, char *argv[])
 	strcpy_s(prjRender, "./Release/");
 	strcat_s(prjRender, prjName);
 	strcpy_s(prjZRender, prjRender);
+	strcpy_s(prjCRender, prjRender);
 	strcat_s(prjRender, ".png");
 	strcat_s(prjZRender, "Z.png");
+	strcat_s(prjCRender, "C.png");
 
 	LoadScene(prjSource);
 
@@ -263,6 +269,10 @@ float IntersectBox(const Ray &ray, Box box) {
 	return hit;
 }
 
+float MyRandom(float max) {
+	return (float)(rand()) / (float)(RAND_MAX) * max;
+}
+
 // Without Ray Differential
 Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node, Vec2f relativePos) {
 	Color c = Color(0, 0, 0);
@@ -331,7 +341,7 @@ Color ShadePixelRayDiff(Ray &ray, Ray *drays , HitInfo &hInfo, Node *node, Vec2f
 	return c;
 }
 
-Color24 CalculatePixelHit(int posX, int posY) {
+Color24 CalculatePixelHit(float posX, float posY) {
 	Color c = Color();
 
 	Vec3f rayp = camera.pos;
@@ -353,7 +363,7 @@ Color24 CalculatePixelHit(int posX, int posY) {
 	return color;
 }
 
-Color24 CalculatePixelColor(int posX, int posY) {
+Color24 CalculatePixelColor(float posX, float posY) {
 	Color c = Color();
 
 	Vec3f rayp = camera.pos;
@@ -393,6 +403,70 @@ Color24 CalculatePixelColor(int posX, int posY) {
 	return color;
 }
 
+uint8_t SamplePixelColor(float posX, float posY, float sampleSize , Color24 &color) {
+	Vec2f points[] = {
+		Vec2f(),
+		Vec2f(),
+		Vec2f(),
+		Vec2f()
+	};
+	Color colors[] = {
+		Color(),
+		Color(),
+		Color(),
+		Color()
+	};
+	Color finalColor = Color();
+	for (int i = 0; i < 2; i++) {
+		for (int j = 0; j < 2; j++) {
+			float currentX = posX + MyRandom(sampleSize) + sampleSize * (i-1);
+			float currentY = posY + MyRandom(sampleSize) + sampleSize * (j-1);
+			Color currentC = CalculatePixelColor(currentX, currentY).ToColor();
+			points[i * 2 + j] = Vec2f(currentX, currentY);
+			colors[i * 2 + j] = currentC;
+		}
+	}
+
+	Color averageC = Color();
+	for (int i = 0; i < 4; i++) {
+		averageC += colors[i];
+	}
+	averageC /= 4;
+
+	Vec3f varianceRGB = Vec3f();
+	for (int i = 0; i < 4; i++) {
+		varianceRGB.x += pow(colors[i].r - averageC.r, 2);
+		varianceRGB.y += pow(colors[i].g - averageC.g, 2);
+		varianceRGB.z += pow(colors[i].b - averageC.b, 2);
+	}
+	varianceRGB /= 4;
+	float variance = varianceRGB.x + varianceRGB.y + varianceRGB.z;
+	variance = sqrt(variance);
+
+	if (variance < max_variance) {
+		finalColor = averageC;
+		color = Color24(finalColor);
+		return 4;
+	}
+	else {
+		uint8_t count = 0;
+		finalColor = Color();
+		for (int i = 0; i < 4; i++) {
+			Color24 currentC = Color24();
+			if (count <= max_sampe_count) {
+				count += SamplePixelColor(points[i].x, points[i].y, sampleSize / 2, currentC);
+			}
+			else {
+				currentC = Color24(colors[i]);
+			}
+			finalColor += currentC.ToColor();
+		}
+		finalColor /= 4;
+		color = Color24(finalColor);
+		return count;
+	}
+}
+
 float CalculatePixelZ(int posX, int posY) {
 	float z = BIGFLOAT;
 
@@ -418,15 +492,21 @@ void BeginRender() {
 	int height = renderImage.GetHeight();
 	Color24* img = renderImage.GetPixels();
 	float* zBuffer = renderImage.GetZBuffer();
-
+	uint8_t* sample = renderImage.GetSampleCount();
 	
 	timer.Start();
 	// build bvh here
 
+	uint8_t sampleCount = 0;
+
 #pragma omp parallel for
 	for (int j = 0; j < height; j++) {
 		for (int i = 0; i < width; i++) {
-			Color24 c = CalculatePixelColor(i, j);
+			// with out antialiasing
+			//Color24 c = CalculatePixelColor(i, j);
+			Color24 c = Color24();
+			uint8_t currentSampleCount = SamplePixelColor(i, j, 0.5f, c);
+			sample[j * width + i] = currentSampleCount;
 			img[j * width + i] = c;
 			float z = CalculatePixelZ(i, j);
 			zBuffer[j * width + i] = z;
@@ -434,6 +514,7 @@ void BeginRender() {
 	}
 
 	renderImage.ComputeZBufferImage();
+	renderImage.ComputeSampleCountImage();
 
 	timer.Stop();
 	auto end = timer.GetAverage();
@@ -1037,8 +1118,8 @@ bool Plane::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 		Vec3f deltaPX = T * deltaDX + D * deltaTX;
 		Vec3f deltaPY = T * deltaDY + D * deltaTY;
 
-		hInfo.duvw[0] = (deltaPX) / 2.0f;
-		hInfo.duvw[1] = (deltaPY) / 2.0f;
+		//hInfo.duvw[0] = (deltaPX) / 2.0f;
+		//hInfo.duvw[1] = (deltaPY) / 2.0f;
 
 		return true;
 	}
