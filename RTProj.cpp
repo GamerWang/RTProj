@@ -12,6 +12,7 @@
 #include <string.h>
 #include <chrono>
 #include <iostream>
+#include <stack>
 
 // best bias for prj6
 //#define bias 0.00095f
@@ -19,10 +20,10 @@
 #define bias 0.00045f
 #define longDis 10000.0f
 #define e_cons 2.718281828f
-#define deltaOffset 0.01f
-#define RAND_MAX 10000
-#define max_variance 0.05f
+#define deltaOffset 0.005f
+#define max_variance 0.01f
 #define max_sampe_count 64
+#define min_halton_sample 4
 
 Node rootNode;
 Camera camera;
@@ -37,8 +38,8 @@ TexturedColor background;
 TexturedColor environment;
 TextureList textureList;
 
-//char prjName[] = "test7";
-char prjName[] = "prj8";
+//char prjName[] = "test9";
+char prjName[] = "prj9";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
@@ -49,16 +50,14 @@ void ShowViewport();
 
 class CameraSpaceInfo {
 public:
-	Vec3f px, py, lc;
-
-	CameraSpaceInfo() {}
+	Vec3f px, py, lc, right;
 
 	void Init(Camera c) {
 		if(!c.dir.IsZero())
 			c.dir.Normalize();
 		if (!c.up.IsZero())
 			c.up.Normalize();
-		Vec3f right = c.dir.Cross(c.up);
+		right = c.dir.Cross(c.up);
 		float ratio = (float)c.imgWidth / (float)c.imgHeight;
 		float halfHeight = tanf(c.fov / 2 * Pi<float>() / 180);
 		float halfWidth = halfHeight * ratio;
@@ -73,6 +72,24 @@ public:
 	}
 };
 CameraSpaceInfo csInfo;
+
+struct JitterNode {
+	float squaredWeight;
+	Vec2f centerPos;
+	Color variance;
+	Color color;
+	JitterNode* sibling;
+	JitterNode* child;
+
+	JitterNode() {
+		squaredWeight = 1;
+		centerPos = Vec2f(0, 0);
+		variance = Color(1, 1, 1);
+		color = Color(0, 0, 0);
+		sibling = NULL;
+		child = NULL;
+	}
+};
 
 // Main Function
 int main(int argc, char *argv[])
@@ -91,6 +108,9 @@ int main(int argc, char *argv[])
 	strcat_s(prjCRender, "C.png");
 
 	LoadScene(prjSource);
+
+	//printf("Dof: %f\n", camera.dof);
+	//printf("Focal Dist: %f\n", camera.focaldist);
 
 	ShowViewport();
 	return 0;
@@ -297,7 +317,7 @@ Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node, Vec2f relativePos) {
 	return c;
 }
 
-// With Ray Differential
+// With 2 other Ray Differential
 Color ShadePixelRayDiff(Ray &ray, Ray *drays , HitInfo &hInfo, Node *node, Vec2f relativePos) {
 	Color c = Color(0, 0, 0);
 
@@ -363,7 +383,7 @@ Color24 CalculatePixelHit(float posX, float posY) {
 	return color;
 }
 
-Color24 CalculatePixelColor(float posX, float posY) {
+Color CalculatePixelColor(float posX, float posY) {
 	Color c = Color();
 
 	Vec3f rayp = camera.pos;
@@ -398,73 +418,273 @@ Color24 CalculatePixelColor(float posX, float posY) {
 	//dRays[1] = dRayY;
 
 	//c = ShadePixelRayDiff(r, dRays, h, &rootNode, Vec2f(relativeX, relativeY));
+	return c;
+}
 
+Color CalculatePixelColorDepth(Vec2f inPos, Vec2f outPos) {
+	Color c = Color();
+	
+	Vec3f rayp = camera.pos + csInfo.right * inPos.x + camera.up * inPos.y;
+	Vec3f focalDir = csInfo.GetPixelDir(outPos.x, outPos.y);
+	focalDir *= camera.focaldist;
+	Vec3f rayd = focalDir - rayp;
+
+	//Ray r = Ray(rayp, rayd);
+	Ray r = Ray(rayp, focalDir - rayp + camera.pos);
+
+	r.diffRight = csInfo.px * focalDir;
+	r.diffUp = csInfo.py * focalDir;
+
+	r.Normalize();
+
+	HitInfo h = HitInfo();
+	float relativeX = outPos.x / (float)camera.imgWidth;
+	float relativeY = outPos.y / (float)camera.imgHeight;
+
+	c = ShadePixel(r, h, &rootNode, Vec2f(relativeX, relativeY));
+
+	return c;
+}
+
+Color24 CalculatePixelColor24(float posX, float posY) {
+	Color c = CalculatePixelColor(posX, posY);
 	Color24 color = Color24(c);
 	return color;
 }
 
-uint8_t SamplePixelColor(float posX, float posY, float sampleSize , Color24 &color) {
-	Vec2f points[] = {
-		Vec2f(),
-		Vec2f(),
-		Vec2f(),
-		Vec2f()
-	};
-	Color colors[] = {
-		Color(),
-		Color(),
-		Color(),
-		Color()
-	};
-	Color finalColor = Color();
-	for (int i = 0; i < 2; i++) {
-		for (int j = 0; j < 2; j++) {
-			float currentX = posX + MyRandom(sampleSize) + sampleSize * (i-1);
-			float currentY = posY + MyRandom(sampleSize) + sampleSize * (j-1);
-			Color currentC = CalculatePixelColor(currentX, currentY).ToColor();
-			points[i * 2 + j] = Vec2f(currentX, currentY);
-			colors[i * 2 + j] = currentC;
+// non recursive way of dynamic sampling (can use almost all memory)
+uint8_t SamplePixelColorJitteredAdaptive(float posX, float posY, float sampleSize, Color24& color) {
+	std::stack<JitterNode*> s;
+	JitterNode* root = new JitterNode();
+	root->centerPos = Vec2f(posX, posY);
+	root->color = CalculatePixelColor(posX, posY);
+	root->squaredWeight = 1;
+	JitterNode* p = root;
+	bool newNodes = false;
+
+	uint8_t totalSample = 1;
+	uint8_t lastSample = 1;
+
+	while (root->variance.Sum() > max_variance && totalSample < max_sampe_count) {
+		lastSample = totalSample;
+		p = root;
+		while (!s.empty() || p != NULL) {
+			while (p != NULL) {
+				if (p->child == NULL) {
+					JitterNode* newChild = NULL;
+					JitterNode* lastChild = NULL;
+					float childWeight = p->squaredWeight / 2;
+					float childSize = sampleSize * childWeight;
+
+					Color newColorP = Color(0, 0, 0);
+					Color newVarianceP = Color(0, 0, 0);
+
+					for (int i = 0; i < 2; i++) {
+						for (int j = 0; j < 2; j++) {
+							newChild = new JitterNode();
+							Vec2f jitter = Vec2f(MyRandom(childSize), MyRandom(childSize));
+							Vec2f newPos = p->centerPos + jitter * childSize + Vec2f(i - 1, j - 1) * childSize;
+							Vec2f newCenter = p->centerPos + Vec2f(i - 0.5f, j - 0.5f) * childSize;
+							
+							newChild->centerPos = newCenter;
+							newChild->color = CalculatePixelColor(newPos.x, newPos.y);
+							newChild->squaredWeight = childWeight;
+
+							newColorP += newChild->color;
+
+							if (lastChild == NULL) {
+								p->child = newChild;
+							}
+							else {
+								lastChild->sibling = newChild;
+							}
+
+							lastChild = newChild;
+						}
+					}
+					totalSample += 3;
+
+					p = NULL;
+				}
+				else {
+					s.push(p);
+					p = p->child;
+				}
+			}
+			if (!s.empty()) {
+				p = s.top();
+				s.pop();
+				p = p->sibling;
+			}
+		}
+
+		p = root;
+		Color finalColor = Color(0, 0, 0);
+		float totalWeight = 0;
+		while (!s.empty() || p != NULL) {
+			while (p != NULL) {
+				if (p->child == NULL) {
+					float currentWeight = (p->squaredWeight * p->squaredWeight);
+					finalColor += p->color * currentWeight;
+					totalWeight += currentWeight;
+				}
+				s.push(p);
+				p = p->child;
+			}
+			if (!s.empty()) {
+				p = s.top();
+				s.pop();
+				p = p->sibling;
+			}
+		}
+
+		if (totalWeight != 0) {
+			finalColor /= totalWeight;
+		}
+
+		root->color = finalColor;
+		
+		p = root;
+		Color finalVariance = Color(0, 0, 0);
+		while (!s.empty() || p != NULL) {
+			while (p != NULL) {
+				if (p->child == NULL) {
+					Color currentVariance = root->color - p->color;
+					currentVariance *= currentVariance;
+					currentVariance *= (p->squaredWeight * p->squaredWeight);
+					finalVariance += currentVariance;
+				}
+				s.push(p);
+				p = p->child;
+			}
+			if (!s.empty()) {
+				p = s.top();
+				s.pop();
+				p = p->sibling;
+			}
+		}
+		finalVariance = Color(sqrt(finalVariance.r), sqrt(finalVariance.g), sqrt(finalVariance.b));
+		root->variance = finalVariance;
+	}
+
+	color = Color24(root->color);
+
+	p = root;
+	while (!s.empty() || p != NULL) {
+		while (p != NULL) {
+			s.push(p);
+			p = p->child;
+		}
+		if (!s.empty()) {
+			p = s.top();
+			s.pop();
+			JitterNode* destroy = p;
+			p = p->sibling;
+			delete destroy;
 		}
 	}
 
-	Color averageC = Color();
-	for (int i = 0; i < 4; i++) {
-		averageC += colors[i];
-	}
-	averageC /= 4;
+	return totalSample;
+}
 
-	Vec3f varianceRGB = Vec3f();
-	for (int i = 0; i < 4; i++) {
-		varianceRGB.x += pow(colors[i].r - averageC.r, 2);
-		varianceRGB.y += pow(colors[i].g - averageC.g, 2);
-		varianceRGB.z += pow(colors[i].b - averageC.b, 2);
+uint8_t SamplePixelHaltonAdaptive(float posX, float posY, Color24& color) {
+	Color finalColor = Color(0, 0, 0);
+	Color previousColor = Color(0, 0, 0);
+	uint8_t sampleCount = 0;
+	float xRand = MyRandom(1);
+	float yRand = MyRandom(1);
+	Color variance = Color(0, 0, 0);
+	while (sampleCount < min_halton_sample) {
+		sampleCount += 1;
+		float x = Halton(sampleCount, 2);
+		float y = Halton(sampleCount, 3);
+		if (x > 0.5f) x -= 1;
+		if (y > 0.5f) y -= 1;
+		x += xRand;
+		y += yRand;
+		if (x > 0.5f) x -= 1;
+		if (y > 0.5f) y -= 1;
+		Color currentColor = CalculatePixelColor(posX + x, posY + y);
+		previousColor = finalColor;
+		finalColor = previousColor * (sampleCount - 1) / sampleCount + currentColor / sampleCount;
+		variance = variance + ((currentColor - previousColor)*(currentColor - finalColor) - variance) / sampleCount;
 	}
-	varianceRGB /= 4;
-	float variance = varianceRGB.x + varianceRGB.y + varianceRGB.z;
-	variance = sqrt(variance);
 
-	if (variance < max_variance) {
-		finalColor = averageC;
-		color = Color24(finalColor);
-		return 4;
+	while (
+		(sqrt(variance.r) + sqrt(variance.g) + sqrt(variance.b)) > 
+		max_variance && sampleCount < max_sampe_count) {
+		sampleCount += 1;
+		float x = Halton(sampleCount, 2);
+		float y = Halton(sampleCount, 3);
+		if (x > 0.5f) x -= 1;
+		if (y > 0.5f) y -= 1;
+		x += xRand;
+		y += yRand;
+		if (x > 0.5f) x -= 1;
+		if (y > 0.5f) y -= 1;
+		Color currentColor = CalculatePixelColor(posX + x, posY + y);
+		previousColor = finalColor;
+		finalColor = previousColor * (sampleCount - 1) / sampleCount + currentColor / sampleCount;
+		variance = variance + ((currentColor - previousColor) * (currentColor - finalColor) - variance) / sampleCount;
 	}
-	else {
-		uint8_t count = 0;
-		finalColor = Color();
-		for (int i = 0; i < 4; i++) {
-			Color24 currentC = Color24();
-			if (count <= max_sampe_count) {
-				count += SamplePixelColor(points[i].x, points[i].y, sampleSize / 2, currentC);
-			}
-			else {
-				currentC = Color24(colors[i]);
-			}
-			finalColor += currentC.ToColor();
-		}
-		finalColor /= 4;
-		color = Color24(finalColor);
-		return count;
+
+	color = Color24(finalColor);
+
+	return sampleCount;
+}
+
+uint8_t SamplePixelHalton(float posX, float posY, float sampleCount, Color24& color) {
+	Color finalColor = Color(0, 0, 0);
+	float xRand = MyRandom(1);
+	float yRand = MyRandom(1);
+	for (int i = 0; i < sampleCount; i++) {
+		float x = Halton(i, 2);
+		float y = Halton(i, 3);
+		if (x > 0.5f) x -= 1;
+		if (y > 0.5f) y -= 1;
+		x += xRand;
+		y += yRand;
+		if (x > 0.5f) x -= 1;
+		if (y > 0.5f) y -= 1;
+		Color currentColor = CalculatePixelColor(posX + x, posY + y);
+		finalColor += currentColor;
 	}
+	finalColor /= sampleCount;
+	color = Color24(finalColor);
+	return sampleCount;
+}
+
+uint8_t SamplePixelDepthofField(float posX, float posY, float apertureSampleCount, Color24& color) {
+	Color finalColor = Color(0, 0, 0);
+
+	float R = camera.dof;
+
+	float xRand = MyRandom(1);
+	float yRand = MyRandom(1);
+	for (int i = 0; i < apertureSampleCount; i++) {
+		float r = MyRandom(R * R);
+		r = sqrt(r);
+		float s = MyRandom(Pi<float>());
+		Vec2f currentIn = Vec2f(cosf(s), sinf(s));
+		currentIn *= r;
+
+		float x = Halton(i, 2);
+		float y = Halton(i, 3);
+		if (x > 0.5f) x -= 1;
+		if (y > 0.5f) y -= 1;
+		x += xRand;
+		y += yRand;
+		if (x > 0.5f) x -= 1;
+		if (y > 0.5f) y -= 1;
+		Vec2f currentOut = Vec2f(posX + x, posY + y);
+
+		Color currentColor = CalculatePixelColorDepth(currentIn, currentOut);
+		finalColor += currentColor;
+	}
+
+	finalColor /= apertureSampleCount;
+	color = Color24(finalColor);
+	return apertureSampleCount;
 }
 
 float CalculatePixelZ(int posX, int posY) {
@@ -499,13 +719,26 @@ void BeginRender() {
 
 	uint8_t sampleCount = 0;
 
+	// initialization
+	for (int j = 0; j < height; j++) {
+		for (int i = 0; i < width; i++) {
+			sample[j * width + i] = 0;
+			img[j * width + i] = Color24(0,0,0);
+			zBuffer[j * width + i] = 0;
+		}
+	}
+
+
 #pragma omp parallel for
 	for (int j = 0; j < height; j++) {
 		for (int i = 0; i < width; i++) {
 			// with out antialiasing
 			//Color24 c = CalculatePixelColor(i, j);
 			Color24 c = Color24();
-			uint8_t currentSampleCount = SamplePixelColor(i, j, 0.5f, c);
+			//uint8_t currentSampleCount = SamplePixelColorJitteredAdaptive(i, j, 1.0f, c);
+			//uint8_t currentSampleCount = SamplePixelHalton(i, j, 32, c);
+			//uint8_t currentSampleCount = SamplePixelHaltonAdaptive(i, j, c);
+			uint8_t currentSampleCount = SamplePixelDepthofField(i, j, 32, c);
 			sample[j * width + i] = currentSampleCount;
 			img[j * width + i] = c;
 			float z = CalculatePixelZ(i, j);

@@ -2,7 +2,7 @@
 ///
 /// \file       xmlload.cpp 
 /// \author     Cem Yuksel (www.cemyuksel.com)
-/// \version    7.0
+/// \version    9.0
 /// \date       August 21, 2019
 ///
 /// \brief Example source for CS 6620 - University of Utah.
@@ -38,30 +38,30 @@ extern TextureList textureList;
 
 //-------------------------------------------------------------------------------
 
-void LoadScene(TiXmlElement *element);
-void LoadNode(Node *node, TiXmlElement *element, int level = 0);
-void LoadTransform(Transformation *trans, TiXmlElement *element, int level);
-void LoadMaterial(TiXmlElement *element);
-void LoadLight(TiXmlElement *element);
-void ReadVector(TiXmlElement *element, Vec3f &v);
-void ReadColor(TiXmlElement *element, Color  &c);
-void ReadFloat(TiXmlElement *element, float  &f, char const *name = "value");
-TextureMap* ReadTexture(TiXmlElement *element);
-Texture* ReadTexture(char const *filename);
+void LoadScene(TiXmlElement* element);
+void LoadNode(Node* node, TiXmlElement* element, int level = 0);
+void LoadTransform(Transformation* trans, TiXmlElement* element, int level);
+void LoadMaterial(TiXmlElement* element);
+void LoadLight(TiXmlElement* element);
+void ReadVector(TiXmlElement* element, Vec3f& v);
+void ReadColor(TiXmlElement* element, Color& c);
+void ReadFloat(TiXmlElement* element, float& f, char const* name = "value");
+TextureMap* ReadTexture(TiXmlElement* element);
+Texture* ReadTexture(char const* filename);
 
 //-------------------------------------------------------------------------------
 
 struct NodeMtl
 {
-	Node *node;
-	char const *mtlName;
+	Node* node;
+	char const* mtlName;
 };
 
 std::vector<NodeMtl> nodeMtlList;
 
 //-------------------------------------------------------------------------------
 
-int LoadScene(char const *filename)
+int LoadScene(char const* filename)
 {
 	TiXmlDocument doc(filename);
 	if (!doc.LoadFile()) {
@@ -69,19 +69,19 @@ int LoadScene(char const *filename)
 		return 0;
 	}
 
-	TiXmlElement *xml = doc.FirstChildElement("xml");
+	TiXmlElement* xml = doc.FirstChildElement("xml");
 	if (!xml) {
 		printf("No \"xml\" tag found.\n");
 		return 0;
 	}
 
-	TiXmlElement *scene = xml->FirstChildElement("scene");
+	TiXmlElement* scene = xml->FirstChildElement("scene");
 	if (!scene) {
 		printf("No \"scene\" tag found.\n");
 		return 0;
 	}
 
-	TiXmlElement *cam = xml->FirstChildElement("camera");
+	TiXmlElement* cam = xml->FirstChildElement("camera");
 	if (!cam) {
 		printf("No \"camera\" tag found.\n");
 		return 0;
@@ -100,7 +100,7 @@ int LoadScene(char const *filename)
 	// Assign materials
 	int numNodes = nodeMtlList.size();
 	for (int i = 0; i < numNodes; i++) {
-		Material *mtl = materials.Find(nodeMtlList[i].mtlName);
+		Material* mtl = materials.Find(nodeMtlList[i].mtlName);
 		if (mtl) nodeMtlList[i].node->SetMaterial(mtl);
 	}
 	nodeMtlList.clear();
@@ -108,12 +108,14 @@ int LoadScene(char const *filename)
 	// Load Camera
 	camera.Init();
 	camera.dir += camera.pos;
-	TiXmlElement *camChild = cam->FirstChildElement();
+	TiXmlElement* camChild = cam->FirstChildElement();
 	while (camChild) {
 		if (COMPARE(camChild->Value(), "position")) ReadVector(camChild, camera.pos);
 		else if (COMPARE(camChild->Value(), "target")) ReadVector(camChild, camera.dir);
 		else if (COMPARE(camChild->Value(), "up")) ReadVector(camChild, camera.up);
 		else if (COMPARE(camChild->Value(), "fov")) ReadFloat(camChild, camera.fov);
+		else if (COMPARE(camChild->Value(), "focaldist")) ReadFloat(camChild, camera.focaldist);
+		else if (COMPARE(camChild->Value(), "dof")) ReadFloat(camChild, camera.dof);
 		else if (COMPARE(camChild->Value(), "width")) camChild->QueryIntAttribute("value", &camera.imgWidth);
 		else if (COMPARE(camChild->Value(), "height")) camChild->QueryIntAttribute("value", &camera.imgHeight);
 		camChild = camChild->NextSiblingElement();
@@ -134,9 +136,9 @@ void PrintIndent(int level) { for (int i = 0; i < level; i++) printf("   "); }
 
 //-------------------------------------------------------------------------------
 
-void LoadScene(TiXmlElement *element)
+void LoadScene(TiXmlElement* element)
 {
-	for (TiXmlElement *child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
+	for (TiXmlElement* child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
 
 		if (COMPARE(child->Value(), "background")) {
 			Color c(1, 1, 1);
@@ -166,9 +168,9 @@ void LoadScene(TiXmlElement *element)
 
 //-------------------------------------------------------------------------------
 
-void LoadNode(Node *parent, TiXmlElement *element, int level)
+void LoadNode(Node* parent, TiXmlElement* element, int level)
 {
-	Node *node = new Node;
+	Node* node = new Node;
 	parent->AppendChild(node);
 
 	// name
@@ -202,9 +204,9 @@ void LoadNode(Node *parent, TiXmlElement *element, int level)
 		}
 		else if (COMPARE(type, "obj")) {
 			printf(" - OBJ");
-			Object *obj = objList.Find(name);
+			Object* obj = objList.Find(name);
 			if (obj == nullptr) { // object is not on the list, so we should load it now
-				TriObj *tobj = new TriObj;
+				TriObj* tobj = new TriObj;
 				if (!tobj->Load(name, mtlName == nullptr)) {
 					printf(" -- ERROR: Cannot load file \"%s.\"", name);
 					delete tobj;
@@ -215,10 +217,10 @@ void LoadNode(Node *parent, TiXmlElement *element, int level)
 					// generate multi-material
 					if (tobj->NM() > 0) {
 						if (materials.Find(name) == nullptr) {
-							MultiMtl *mm = new MultiMtl;
+							MultiMtl* mm = new MultiMtl;
 							for (unsigned int i = 0; i < tobj->NM(); i++) {
-								MtlBlinn *m = new MtlBlinn;
-								const cyTriMesh::Mtl &mtl = tobj->M(i);
+								MtlBlinn* m = new MtlBlinn;
+								const cyTriMesh::Mtl& mtl = tobj->M(i);
 								m->SetDiffuse(Color(mtl.Kd));
 								m->SetSpecular(Color(mtl.Ks));
 								m->SetGlossiness(mtl.Ns);
@@ -256,7 +258,7 @@ void LoadNode(Node *parent, TiXmlElement *element, int level)
 	printf("\n");
 
 
-	for (TiXmlElement *child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
+	for (TiXmlElement* child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
 		if (COMPARE(child->Value(), "object")) {
 			LoadNode(node, child, level + 1);
 		}
@@ -267,9 +269,9 @@ void LoadNode(Node *parent, TiXmlElement *element, int level)
 
 //-------------------------------------------------------------------------------
 
-void LoadTransform(Transformation *trans, TiXmlElement *element, int level)
+void LoadTransform(Transformation* trans, TiXmlElement* element, int level)
 {
-	for (TiXmlElement *child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
+	for (TiXmlElement* child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
 		if (COMPARE(child->Value(), "scale")) {
 			Vec3f s(1, 1, 1);
 			ReadVector(child, s);
@@ -299,9 +301,9 @@ void LoadTransform(Transformation *trans, TiXmlElement *element, int level)
 
 //-------------------------------------------------------------------------------
 
-void LoadMaterial(TiXmlElement *element)
+void LoadMaterial(TiXmlElement* element)
 {
-	Material *mtl = nullptr;
+	Material* mtl = nullptr;
 
 	// name
 	char const* name = element->Attribute("name");
@@ -314,9 +316,9 @@ void LoadMaterial(TiXmlElement *element)
 	if (type) {
 		if (COMPARE(type, "blinn")) {
 			printf(" - Blinn\n");
-			MtlBlinn *m = new MtlBlinn();
+			MtlBlinn* m = new MtlBlinn();
 			mtl = m;
-			for (TiXmlElement *child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
+			for (TiXmlElement* child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
 				Color c(1, 1, 1);
 				float f = 1;
 				if (COMPARE(child->Value(), "diffuse")) {
@@ -370,9 +372,9 @@ void LoadMaterial(TiXmlElement *element)
 
 //-------------------------------------------------------------------------------
 
-void LoadLight(TiXmlElement *element)
+void LoadLight(TiXmlElement* element)
 {
-	Light *light = nullptr;
+	Light* light = nullptr;
 
 	// name
 	char const* name = element->Attribute("name");
@@ -385,9 +387,9 @@ void LoadLight(TiXmlElement *element)
 	if (type) {
 		if (COMPARE(type, "ambient")) {
 			printf(" - Ambient\n");
-			AmbientLight *l = new AmbientLight();
+			AmbientLight* l = new AmbientLight();
 			light = l;
-			for (TiXmlElement *child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
+			for (TiXmlElement* child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
 				if (COMPARE(child->Value(), "intensity")) {
 					Color c(1, 1, 1);
 					ReadColor(child, c);
@@ -398,9 +400,9 @@ void LoadLight(TiXmlElement *element)
 		}
 		else if (COMPARE(type, "direct")) {
 			printf(" - Direct\n");
-			DirectLight *l = new DirectLight();
+			DirectLight* l = new DirectLight();
 			light = l;
-			for (TiXmlElement *child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
+			for (TiXmlElement* child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
 				if (COMPARE(child->Value(), "intensity")) {
 					Color c(1, 1, 1);
 					ReadColor(child, c);
@@ -417,9 +419,9 @@ void LoadLight(TiXmlElement *element)
 		}
 		else if (COMPARE(type, "point")) {
 			printf(" - Point\n");
-			PointLight *l = new PointLight();
+			PointLight* l = new PointLight();
 			light = l;
-			for (TiXmlElement *child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
+			for (TiXmlElement* child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
 				if (COMPARE(child->Value(), "intensity")) {
 					Color c(1, 1, 1);
 					ReadColor(child, c);
@@ -448,7 +450,7 @@ void LoadLight(TiXmlElement *element)
 
 //-------------------------------------------------------------------------------
 
-void ReadVector(TiXmlElement *element, Vec3f &v)
+void ReadVector(TiXmlElement* element, Vec3f& v)
 {
 	double x = (double)v.x;
 	double y = (double)v.y;
@@ -467,7 +469,7 @@ void ReadVector(TiXmlElement *element, Vec3f &v)
 
 //-------------------------------------------------------------------------------
 
-void ReadColor(TiXmlElement *element, Color &c)
+void ReadColor(TiXmlElement* element, Color& c)
 {
 	double r = (double)c.r;
 	double g = (double)c.g;
@@ -486,7 +488,7 @@ void ReadColor(TiXmlElement *element, Color &c)
 
 //-------------------------------------------------------------------------------
 
-void ReadFloat(TiXmlElement *element, float &f, char const *name)
+void ReadFloat(TiXmlElement* element, float& f, char const* name)
 {
 	double d = (double)f;
 	element->QueryDoubleAttribute(name, &d);
@@ -495,17 +497,17 @@ void ReadFloat(TiXmlElement *element, float &f, char const *name)
 
 //-------------------------------------------------------------------------------
 
-TextureMap* ReadTexture(TiXmlElement *element)
+TextureMap* ReadTexture(TiXmlElement* element)
 {
 	char const* texName = element->Attribute("texture");
 	if (texName == nullptr) return nullptr;
 
-	Texture *tex = nullptr;
+	Texture* tex = nullptr;
 	if (COMPARE(texName, "checkerboard")) {
-		TextureChecker *ctex = new TextureChecker;
+		TextureChecker* ctex = new TextureChecker;
 		tex = ctex;
 		printf("      Texture: Checker Board\n");
-		for (TiXmlElement *child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
+		for (TiXmlElement* child = element->FirstChildElement(); child != nullptr; child = child->NextSiblingElement()) {
 			if (COMPARE(child->Value(), "color1")) {
 				Color c(0, 0, 0);
 				ReadColor(child, c);
@@ -525,19 +527,19 @@ TextureMap* ReadTexture(TiXmlElement *element)
 		tex = ReadTexture(texName);
 	}
 
-	TextureMap *map = new TextureMap(tex);
+	TextureMap* map = new TextureMap(tex);
 	LoadTransform(map, element, 1);
 	return map;
 }
 
 //-------------------------------------------------------------------------------
 
-Texture* ReadTexture(char const *texName)
+Texture* ReadTexture(char const* texName)
 {
 	printf("      Texture: File \"%s\"", texName);
-	Texture *tex = textureList.Find(texName);
+	Texture* tex = textureList.Find(texName);
 	if (tex == nullptr) {
-		TextureFile *ftex = new TextureFile;
+		TextureFile* ftex = new TextureFile;
 		tex = ftex;
 		ftex->SetName(texName);
 		if (!ftex->Load()) {

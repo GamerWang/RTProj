@@ -1,8 +1,9 @@
+
 //-------------------------------------------------------------------------------
 ///
 /// \file       scene.h 
 /// \author     Cem Yuksel (www.cemyuksel.com)
-/// \version    8.0
+/// \version    9.0
 /// \date       August 21, 2019
 ///
 /// \brief Example source for CS 6620 - University of Utah.
@@ -509,7 +510,7 @@ class Camera
 {
 public:
 	Vec3f pos, dir, up;
-	float fov;
+	float fov, focaldist, dof;
 	int imgWidth, imgHeight;
 
 	void Init()
@@ -518,6 +519,8 @@ public:
 		dir.Set(0, 0, -1);
 		up.Set(0, 1, 0);
 		fov = 40;
+		focaldist = 1;
+		dof = 0;
 		imgWidth = 200;
 		imgHeight = 150;
 	}
