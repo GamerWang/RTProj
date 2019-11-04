@@ -17,13 +17,17 @@
 // best bias for prj6
 //#define bias 0.00095f
 // temp bias for prj7
-#define bias 0.00045f
+#define bias 0.00015f
 #define longDis 10000.0f
 #define e_cons 2.718281828f
 #define deltaOffset 0.005f
 #define max_variance 0.01f
-#define max_sampe_count 64
-#define min_halton_sample 4
+#define max_sampe_count 128
+#define min_halton_sample 16
+#define min_shadow_ray 8
+#define full_shadow_ray 32
+#define min_surface_sample 1
+#define max_surface_sample 1
 
 Node rootNode;
 Camera camera;
@@ -38,8 +42,8 @@ TexturedColor background;
 TexturedColor environment;
 TextureList textureList;
 
-//char prjName[] = "test9";
-char prjName[] = "prj9";
+//char prjName[] = "test10";
+char prjName[] = "prj10";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
@@ -94,7 +98,7 @@ struct JitterNode {
 // Main Function
 int main(int argc, char *argv[])
 {
-	omp_set_num_threads(16);
+	omp_set_num_threads(24);
 
 	strcpy_s(prjSource, prjName);
 	strcat_s(prjSource, ".xml");
@@ -108,9 +112,6 @@ int main(int argc, char *argv[])
 	strcat_s(prjCRender, "C.png");
 
 	LoadScene(prjSource);
-
-	//printf("Dof: %f\n", camera.dof);
-	//printf("Focal Dist: %f\n", camera.focaldist);
 
 	ShowViewport();
 	return 0;
@@ -664,7 +665,7 @@ uint8_t SamplePixelDepthofField(float posX, float posY, float apertureSampleCoun
 	for (int i = 0; i < apertureSampleCount; i++) {
 		float r = MyRandom(R * R);
 		r = sqrt(r);
-		float s = MyRandom(Pi<float>());
+		float s = MyRandom(2 * Pi<float>());
 		Vec2f currentIn = Vec2f(cosf(s), sinf(s));
 		currentIn *= r;
 
@@ -736,9 +737,9 @@ void BeginRender() {
 			//Color24 c = CalculatePixelColor(i, j);
 			Color24 c = Color24();
 			//uint8_t currentSampleCount = SamplePixelColorJitteredAdaptive(i, j, 1.0f, c);
-			//uint8_t currentSampleCount = SamplePixelHalton(i, j, 32, c);
-			//uint8_t currentSampleCount = SamplePixelHaltonAdaptive(i, j, c);
-			uint8_t currentSampleCount = SamplePixelDepthofField(i, j, 32, c);
+			//uint8_t currentSampleCount = SamplePixelHalton(i, j, 4, c);
+			uint8_t currentSampleCount = SamplePixelHaltonAdaptive(i, j, c);
+			//uint8_t currentSampleCount = SamplePixelDepthofField(i, j, 32, c);
 			sample[j * width + i] = currentSampleCount;
 			img[j * width + i] = c;
 			float z = CalculatePixelZ(i, j);
@@ -767,103 +768,208 @@ Color MtlBlinn::Shade(
 {
 	Color c = Color(0, 0, 0);
 	if (bounceCount > 0) {
+		int surfaceSampleCount = 1;
 
 		Vec3f inDir = ray.dir * -1;
-		Vec3f nDir = hInfo.N.GetNormalized();
-		Vec3f reflecDir = 2 * nDir.Dot(inDir) * nDir - inDir;
-		reflecDir.Normalize();
+		inDir.Normalize();
+		Vec3f baseNDir = hInfo.N.GetNormalized();
+		Vec3f coordDir1 = Vec3f(0, 0, 0);
+		Vec3f coordDir2 = Vec3f(0, 0, 0);
+		float randRadius = 0;
 
-		if (hInfo.front == true) {
-			if (reflection.GetColor().r > 0) {
-				Color currentC = Color(0, 0, 0);
-
-				Ray reflecRay = Ray(hInfo.p, reflecDir);
-				reflecRay.diffRight = ray.diffRight - 2 * (ray.diffRight.Dot(nDir) * nDir);
-				reflecRay.diffUp = ray.diffUp - 2 * (ray.diffUp.Dot(nDir) * nDir);
-
-				HitInfo reflectHit = HitInfo();
-				bool hResult = RayToNode(reflecRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
-				if (hResult) {
-					const Node* hitNode = reflectHit.node;
-					currentC = hitNode->GetMaterial()
-						->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
-					currentC *= reflection.GetColor();
-				}
-				else {
-					currentC = environment.SampleEnvironment(reflecDir) * reflection.GetColor();
-				}
-				c += currentC;
+		if (reflectionGlossiness != 0 || refractionGlossiness != 0) {
+			surfaceSampleCount = max_surface_sample;
+			Vec3f randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+			randomDir.Normalize();
+			coordDir1 = baseNDir.Cross(randomDir);
+			while (coordDir1.Length() < 0.75f) {
+				randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+				randomDir.Normalize();
+				coordDir1 = baseNDir.Cross(randomDir);
 			}
-			if (refraction.GetColor().r > 0) {
+			coordDir1.Normalize();
+			coordDir2 = baseNDir.Cross(coordDir1);
+
+			if (reflectionGlossiness != 0) {
+				randRadius = sinf(reflectionGlossiness);
+			}
+			else if (refractionGlossiness) {
+				randRadius = sinf(refractionGlossiness);
+			}
+			randRadius = randRadius * randRadius;
+		}
+
+		for (int j = 0; j < surfaceSampleCount; j++) {
+			randRadius = MyRandom(randRadius);
+
+			float randAngle = MyRandom(2 * Pi<float>());
+			randRadius = sqrt(randRadius);
+
+			float randX = sinf(randAngle);
+			float randY = cosf(randAngle);
+
+			Vec3f nDir = baseNDir + (randX * coordDir1 + randY * coordDir2) * randRadius;
+			nDir.Normalize();
+
+			Vec3f reflecDir = 2 * nDir.Dot(inDir) * nDir - inDir;
+			reflecDir.Normalize();
+
+			if (hInfo.front == true) {
+				if (reflection.GetColor().r > 0) {
+					Color currentC = Color(0, 0, 0);
+
+					Ray reflecRay = Ray(hInfo.p, reflecDir);
+					reflecRay.diffRight = ray.diffRight - 2 * (ray.diffRight.Dot(nDir) * nDir);
+					reflecRay.diffUp = ray.diffUp - 2 * (ray.diffUp.Dot(nDir) * nDir);
+
+					HitInfo reflectHit = HitInfo();
+					bool hResult = RayToNode(reflecRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
+					if (hResult) {
+						const Node* hitNode = reflectHit.node;
+						currentC = hitNode->GetMaterial()
+							->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
+						currentC *= reflection.GetColor();
+					}
+					else {
+						currentC = environment.SampleEnvironment(reflecDir) * reflection.GetColor();
+					}
+					c += currentC;
+				}
+				if (refraction.GetColor().r > 0) {
+					Color currentC = Color(0, 0, 0);
+
+					float n1 = 1;
+					float n2 = ior;
+
+					float cosFi1 = abs(inDir.Dot(nDir));
+					float sinFi1 = sqrt(1 - cosFi1 * cosFi1);
+					float sinFi2 = sinFi1 * n1 / n2;
+					float cosFi2 = sqrt(1 - sinFi2 * sinFi2);
+					Vec3f surfaceDir = (inDir - (cosFi1 * nDir));
+					surfaceDir.Normalize();
+					Vec3f tl = -1 * sinFi2 * surfaceDir;
+					Vec3f tn = -1 * nDir * cosFi2;
+					Vec3f refracDir = tl + tn;
+
+					Color reflecC = Color(0, 0, 0);
+					Color refracC = Color(0, 0, 0);
+
+					float r0 = pow(((n1 - n2) / (n1 + n2)), 2);
+					float fresnel = r0 + (1 - r0) * pow((1 - cosFi1), 5);
+					float kt = refraction.GetColor().r;
+
+					Ray reflecRay = Ray(hInfo.p, reflecDir);
+					reflecRay.diffRight = ray.diffRight - 2 * (ray.diffRight.Dot(nDir) * nDir);
+					reflecRay.diffUp = ray.diffUp - 2 * (ray.diffUp.Dot(nDir) * nDir);
+
+					HitInfo reflectHit = HitInfo();
+					bool hResult = RayToNode(reflecRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
+					if (hResult) {
+						const Node* hitNode = reflectHit.node;
+						reflecC = hitNode->GetMaterial()
+							->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
+						reflecC *= fresnel;
+					}
+					else {
+						reflecC = fresnel * environment.SampleEnvironment(reflecDir);
+					}
+
+					Ray refracRay = Ray(hInfo.p, refracDir);
+					refracRay.diffRight = ray.diffRight;
+					refracRay.diffUp = ray.diffUp;
+
+					HitInfo refracHit = HitInfo();
+
+					hResult = RayToNode(refracRay, refracHit, &rootNode, HIT_FRONT_AND_BACK);
+					if (hResult) {
+						const Node* hitNode = refracHit.node;
+						refracC = hitNode->GetMaterial()
+							->Shade(refracRay, refracHit, lights, bounceCount - 1);
+						Vec3f refracRoute = refracHit.p - hInfo.p;
+						float dis = refracRoute.Length();
+						float rAbsorb = pow(e_cons, -absorption.r * dis);
+						float gAbsorb = pow(e_cons, -absorption.g * dis);
+						float bAbsorb = pow(e_cons, -absorption.b * dis);
+						Color remainC = Color(rAbsorb, gAbsorb, bAbsorb);
+						refracC *= ((1 - fresnel) * remainC * refraction.GetColor());
+					}
+					else {
+						refracC = environment.SampleEnvironment(refracDir) * refraction.GetColor();
+					}
+
+					currentC += reflecC;
+					currentC += refracC;
+
+					c += currentC;
+				}
+			}
+			else {
 				Color currentC = Color(0, 0, 0);
 
-				float n1 = 1;
-				float n2 = ior;
+				float n1 = ior;
+				float n2 = 1;
 
 				Vec3f inDir = ray.dir * -1;
 				inDir.Normalize();
-				Vec3f nDir = hInfo.N.GetNormalized();
-				
-				float cosFi1 = abs(inDir.Dot(nDir));
-				float sinFi1 = sqrt(1 - cosFi1 * cosFi1);
-				float sinFi2 = sinFi1 * n1 / n2;
-				float cosFi2 = sqrt(1 - sinFi2 * sinFi2);
-				Vec3f surfaceDir = (inDir - (cosFi1 * nDir));
-				surfaceDir.Normalize();
-				Vec3f tl = -1 * sinFi2 * surfaceDir;
-				Vec3f tn = -1 * nDir * cosFi2;
-				Vec3f refracDir = tl + tn;
+				nDir = nDir * -1;
 
 				Color reflecC = Color(0, 0, 0);
 				Color refracC = Color(0, 0, 0);
 
-				float r0 = pow(((n1 - n2) / (n1 + n2)), 2);
-				float fresnel = r0 + (1 - r0) * pow((1-cosFi1), 5);
-				float kt = refraction.GetColor().r;
+				float cosFi1 = abs(inDir.Dot(nDir));
+				float sinFi1 = sqrt(1 - cosFi1 * cosFi1);
+				float sinFi2 = sinFi1 * n1 / n2;
+				if (sinFi2 < 1) {
+					float cosFi2 = sqrt(1 - sinFi2 * sinFi2);
+					Vec3f surfaceDir = (inDir - (cosFi1 * nDir));
+					surfaceDir.Normalize();
+					Vec3f tl = -1 * sinFi2 * surfaceDir;
+					Vec3f tn = -1 * nDir * cosFi2;
+					Vec3f refracDir = tl + tn;
 
-				Ray reflecRay = Ray(hInfo.p, reflecDir);
-				reflecRay.diffRight = ray.diffRight - 2 * (ray.diffRight.Dot(nDir) * nDir);
-				reflecRay.diffUp = ray.diffUp - 2 * (ray.diffUp.Dot(nDir) * nDir);
+					Ray refracRay = Ray(hInfo.p, refracDir);
+					refracRay.diffRight = ray.diffRight;
+					refracRay.diffUp = ray.diffUp;
 
-				HitInfo reflectHit = HitInfo();
-				bool hResult = RayToNode(reflecRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
-				if (hResult) {
-					const Node* hitNode = reflectHit.node;
-					reflecC = hitNode->GetMaterial()
-						->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
-					reflecC *= (fresnel * refraction.GetColor() + reflection.GetColor());
+					HitInfo refracHit = HitInfo();
+
+					bool hResult = RayToNode(refracRay, refracHit, &rootNode, HIT_FRONT_AND_BACK);
+					if (hResult) {
+						const Node* hitNode = refracHit.node;
+						refracC = hitNode->GetMaterial()
+							->Shade(refracRay, refracHit, lights, bounceCount - 1);
+						currentC += refracC;
+					}
+					else {
+						refracC = environment.SampleEnvironment(refracDir) * refraction.GetColor();
+						currentC += refracC;
+					}
 				}
 				else {
-					reflecC = environment.SampleEnvironment(reflecDir) * reflection.GetColor();
+					Ray reflecRay = Ray(hInfo.p, reflecDir);
+					reflecRay.diffRight = ray.diffRight - 2 * (ray.diffRight.Dot(nDir) * nDir);
+					reflecRay.diffUp = ray.diffUp - 2 * (ray.diffUp.Dot(nDir) * nDir);
+
+					HitInfo reflectHit = HitInfo();
+
+					bool hResult = RayToNode(reflecRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
+					if (hResult) {
+						const Node* hitNode = reflectHit.node;
+						reflecC = hitNode->GetMaterial()
+							->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
+						currentC += reflecC;
+					}
+					else {
+						reflecC = environment.SampleEnvironment(reflecDir) * reflection.GetColor();
+						currentC += reflecC;
+					}
 				}
-
-				Ray refracRay = Ray(hInfo.p, refracDir);
-				refracRay.diffRight = ray.diffRight;
-				refracRay.diffUp = ray.diffUp;
-
-				HitInfo refracHit = HitInfo();
-
-				hResult = RayToNode(refracRay, refracHit, &rootNode, HIT_FRONT_AND_BACK);
-				if (hResult) {
-					const Node* hitNode = refracHit.node;
-					refracC = hitNode->GetMaterial()
-						->Shade(refracRay, refracHit, lights, bounceCount - 1);
-					Vec3f refracRoute = refracHit.p - hInfo.p;
-					float dis = refracRoute.Length();
-					float rAbsorb = pow(e_cons, -absorption.r * dis);
-					float gAbsorb = pow(e_cons, -absorption.g * dis);
-					float bAbsorb = pow(e_cons, -absorption.b * dis);
-					Color remainC = Color(rAbsorb, gAbsorb, bAbsorb);
-					refracC *= ((1 - fresnel) * remainC * refraction.GetColor());
-				}
-				else {
-					refracC = environment.SampleEnvironment(refracDir) * refraction.GetColor();
-				}
-				currentC += reflecC;
-				currentC += refracC;
-
 				c += currentC;
 			}
+		}
+		c /= surfaceSampleCount;
+
+		if (hInfo.front == true) {
 			for (int i = 0; i < lightsUsing.size(); i++) {
 				Color currentC = Color(0, 0, 0);
 				Light* l = lightsUsing[i];
@@ -877,7 +983,7 @@ Color MtlBlinn::Shade(
 
 					Vec3f lDir = l->Direction(hInfo.p) * -1;
 					Vec3f vDir = -ray.dir;
-					Vec3f nDir = hInfo.N.GetNormalized();
+					Vec3f nDir = baseNDir;
 					Vec3f hDir = (vDir + lDir);
 					hDir = hDir / hDir.Length();
 
@@ -900,69 +1006,6 @@ Color MtlBlinn::Shade(
 				}
 				c += currentC;
 			}
-		}
-		else {
-			Color currentC = Color(0, 0, 0);
-
-			float n1 = ior;
-			float n2 = 1;
-
-			Vec3f inDir = ray.dir * -1;
-			inDir.Normalize();
-			Vec3f nDir = hInfo.N.GetNormalized() * -1;
-
-			Color reflecC = Color(0, 0, 0);
-			Color refracC = Color(0, 0, 0);
-
-			float cosFi1 = abs(inDir.Dot(nDir));
-			float sinFi1 = sqrt(1 - cosFi1 * cosFi1);
-			float sinFi2 = sinFi1 * n1 / n2;
-			if (sinFi2 < 1) {
-				float cosFi2 = sqrt(1 - sinFi2 * sinFi2);
-				Vec3f surfaceDir = (inDir - (cosFi1 * nDir));
-				surfaceDir.Normalize();
-				Vec3f tl = -1 * sinFi2 * surfaceDir;
-				Vec3f tn = -1 * nDir * cosFi2;
-				Vec3f refracDir = tl + tn;
-
-				Ray refracRay = Ray(hInfo.p, refracDir);
-				refracRay.diffRight = ray.diffRight;
-				refracRay.diffUp = ray.diffUp;
-
-				HitInfo refracHit = HitInfo();
-
-				bool hResult = RayToNode(refracRay, refracHit, &rootNode, HIT_FRONT_AND_BACK);
-				if (hResult) {
-					const Node* hitNode = refracHit.node;
-					refracC = hitNode->GetMaterial()
-						->Shade(refracRay, refracHit, lights, bounceCount - 1);
-					currentC += refracC;
-				}
-				else {
-					refracC = environment.SampleEnvironment(refracDir) * refraction.GetColor();
-					currentC += refracC;
-				}
-			}
-			else {
-				Ray reflecRay = Ray(hInfo.p, reflecDir);
-				reflecRay.diffRight = ray.diffRight - 2 * (ray.diffRight.Dot(nDir) * nDir);
-				reflecRay.diffUp = ray.diffUp - 2 * (ray.diffUp.Dot(nDir) * nDir);
-
-				HitInfo reflectHit = HitInfo();
-				
-				bool hResult = RayToNode(reflecRay, reflectHit, &rootNode, HIT_FRONT_AND_BACK);
-				if (hResult) {
-					const Node* hitNode = reflectHit.node;
-					reflecC = hitNode->GetMaterial()
-						->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
-					currentC += reflecC;
-				}
-				else {
-					reflecC = environment.SampleEnvironment(reflecDir) * reflection.GetColor();
-					currentC += reflecC;
-				}
-			}
-			c += currentC;
 		}
 	}
 	return c;
@@ -1351,8 +1394,8 @@ bool Plane::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 		Vec3f deltaPX = T * deltaDX + D * deltaTX;
 		Vec3f deltaPY = T * deltaDY + D * deltaTY;
 
-		//hInfo.duvw[0] = (deltaPX) / 2.0f;
-		//hInfo.duvw[1] = (deltaPY) / 2.0f;
+		hInfo.duvw[0] = (deltaPX) / 2.0f;
+		hInfo.duvw[1] = (deltaPY) / 2.0f;
 
 		return true;
 	}
@@ -1373,4 +1416,69 @@ float GenLight::Shadow(Ray ray, float t_max) {
 		return 0;
 	else
 		return 1;
+}
+
+Color PointLight::Illuminate(Vec3f const& p, Vec3f const& N) const {
+	Vec3f centerDir = position - p;
+	Vec3f nCenterDir = centerDir / centerDir.Length();
+	Vec3f randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+	randomDir.Normalize();
+	Vec3f coordDir1 = nCenterDir.Cross(randomDir);
+	while (coordDir1.Length() < 0.75f) {
+		randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+		randomDir.Normalize();
+		coordDir1 = nCenterDir.Cross(randomDir);
+	}
+	coordDir1.Normalize();
+	Vec3f coordDir2 = nCenterDir.Cross(coordDir1);
+
+	bool colorSame = true;
+	float firstShadow = 0;
+	float sizeS = size * size;
+	float finalShadow = 0;
+
+	for (int i = 0; i < min_shadow_ray; i++) {
+		float randAngle = MyRandom(2 * Pi<float>());
+		float randRadius = MyRandom(sizeS);
+		randRadius = sqrt(randRadius);
+
+		float randX = sinf(randAngle);
+		float randY = cosf(randAngle);
+
+		Vec3f currentDir = centerDir + (randX * coordDir1 + randY * coordDir2) * randRadius;
+		float currentShadow = Shadow(Ray(p, currentDir), 1);
+
+		if (i == 0) {
+			firstShadow = currentShadow;
+		}
+
+		if (currentShadow != firstShadow) {
+			colorSame = false;
+		}
+
+		finalShadow += currentShadow;
+	}
+
+	if (colorSame) {
+		finalShadow /= min_shadow_ray;
+	}
+	else {
+		for (int i = 0; i < full_shadow_ray - min_shadow_ray; i++) {
+			float randAngle = MyRandom(2 * Pi<float>());
+			float randRadius = MyRandom(sizeS);
+			randRadius = sqrt(randRadius);
+
+			float randX = sinf(randAngle);
+			float randY = cosf(randAngle);
+
+			Vec3f currentDir = centerDir + (randX * coordDir1 + randY * coordDir2) * randRadius;
+			float currentShadow = Shadow(Ray(p, currentDir), 1);
+
+			finalShadow += currentShadow;
+		}
+
+		finalShadow /= full_shadow_ray;
+	}
+
+	return finalShadow * intensity;
 }
