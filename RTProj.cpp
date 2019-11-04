@@ -21,6 +21,7 @@
 #define longDis 10000.0f
 #define e_cons 2.718281828f
 #define deltaOffset 0.005f
+#define max_lignt_bounce 5
 #define max_variance 0.01f
 #define max_sampe_count 128
 #define min_halton_sample 16
@@ -301,7 +302,7 @@ Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node, Vec2f relativePos) {
 	bool hResult = RayToNode(ray, hInfo, node);
 	if (hResult) {
 		const Node* hitNode = hInfo.node;
-		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, 5);
+		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, max_lignt_bounce);
 	}
 	else {
 		// cylinder background mapping
@@ -868,10 +869,10 @@ Color MtlBlinn::Shade(
 						const Node* hitNode = reflectHit.node;
 						reflecC = hitNode->GetMaterial()
 							->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
-						reflecC *= fresnel;
+						reflecC = fresnel * reflecC * refraction.GetColor();
 					}
 					else {
-						reflecC = fresnel * environment.SampleEnvironment(reflecDir);
+						reflecC = fresnel * environment.SampleEnvironment(reflecDir) * refraction.GetColor();
 					}
 
 					Ray refracRay = Ray(hInfo.p, refracDir);
