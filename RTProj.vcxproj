@@ -181,6 +181,7 @@
       <SubType>Designer</SubType>
     </Xml>
     <Xml Include="prj10.xml" />
+    <Xml Include="prj11.xml" />
     <Xml Include="prj2.xml" />
     <Xml Include="prj3.xml" />
     <Xml Include="prj4.xml" />
@@ -191,6 +192,7 @@
     <Xml Include="prj9.xml" />
     <Xml Include="test1.xml" />
     <Xml Include="test10.xml" />
+    <Xml Include="test11.xml" />
     <Xml Include="test3.xml" />
     <Xml Include="test5.xml" />
     <Xml Include="test6.xml" />

@@ -21,14 +21,17 @@
 #define longDis 10000.0f
 #define e_cons 2.718281828f
 #define deltaOffset 0.005f
-#define max_lignt_bounce 5
-#define max_variance 0.01f
-#define max_sampe_count 128
-#define min_halton_sample 16
-#define min_shadow_ray 8
-#define full_shadow_ray 32
+#define max_refLignt_bounce 3
+#define max_giLight_bounce 1
+#define max_variance 0.15f
+#define max_sampe_count 32
+#define min_halton_sample 8
+#define min_shadow_ray 4
+#define full_shadow_ray 16
+#define max_gi_sample 16
 #define min_surface_sample 1
 #define max_surface_sample 1
+#define gamma_term 0.4545454545f
 
 Node rootNode;
 Camera camera;
@@ -43,8 +46,8 @@ TexturedColor background;
 TexturedColor environment;
 TextureList textureList;
 
-//char prjName[] = "test10";
-char prjName[] = "prj10";
+char prjName[] = "test11";
+//char prjName[] = "prj11";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
@@ -144,6 +147,13 @@ bool ShadowRayToNode(Ray &ray, HitInfo &hInfo, Node *node) {
 	}
 
 	return false;
+}
+
+Color GammaCorrection(Color sRGB) {
+	float linearR = pow(sRGB.r, gamma_term);
+	float linearG = pow(sRGB.g, gamma_term);
+	float linearB = pow(sRGB.b, gamma_term);
+	return Color(linearR, linearG, linearB);
 }
 
 bool RayToNode(Ray &ray, HitInfo &hInfo, Node *node, int hitSide = HIT_FRONT) {
@@ -302,7 +312,7 @@ Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node, Vec2f relativePos) {
 	bool hResult = RayToNode(ray, hInfo, node);
 	if (hResult) {
 		const Node* hitNode = hInfo.node;
-		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, max_lignt_bounce);
+		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, max_refLignt_bounce, max_giLight_bounce);
 	}
 	else {
 		// cylinder background mapping
@@ -630,6 +640,7 @@ uint8_t SamplePixelHaltonAdaptive(float posX, float posY, Color24& color) {
 		variance = variance + ((currentColor - previousColor) * (currentColor - finalColor) - variance) / sampleCount;
 	}
 
+	finalColor = GammaCorrection(finalColor);
 	color = Color24(finalColor);
 
 	return sampleCount;
@@ -765,10 +776,10 @@ Color MtlBlinn::Shade(
 	Ray const &ray,
 	const HitInfo &hInfo,
 	const LightList &lightsUsing,
-	int bounceCount) const
+	int refBounceCount, int giBounceCount) const
 {
 	Color c = Color(0, 0, 0);
-	if (bounceCount > 0) {
+	if (refBounceCount > 0) {
 		int surfaceSampleCount = 1;
 
 		Vec3f inDir = ray.dir * -1;
@@ -828,7 +839,7 @@ Color MtlBlinn::Shade(
 					if (hResult) {
 						const Node* hitNode = reflectHit.node;
 						currentC = hitNode->GetMaterial()
-							->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
+							->Shade(reflecRay, reflectHit, lights, refBounceCount - 1);
 						currentC *= reflection.GetColor();
 					}
 					else {
@@ -868,7 +879,7 @@ Color MtlBlinn::Shade(
 					if (hResult) {
 						const Node* hitNode = reflectHit.node;
 						reflecC = hitNode->GetMaterial()
-							->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
+							->Shade(reflecRay, reflectHit, lights, refBounceCount - 1);
 						reflecC = fresnel * reflecC * refraction.GetColor();
 					}
 					else {
@@ -885,7 +896,7 @@ Color MtlBlinn::Shade(
 					if (hResult) {
 						const Node* hitNode = refracHit.node;
 						refracC = hitNode->GetMaterial()
-							->Shade(refracRay, refracHit, lights, bounceCount - 1);
+							->Shade(refracRay, refracHit, lights, refBounceCount - 1);
 						Vec3f refracRoute = refracHit.p - hInfo.p;
 						float dis = refracRoute.Length();
 						float rAbsorb = pow(e_cons, -absorption.r * dis);
@@ -938,7 +949,7 @@ Color MtlBlinn::Shade(
 					if (hResult) {
 						const Node* hitNode = refracHit.node;
 						refracC = hitNode->GetMaterial()
-							->Shade(refracRay, refracHit, lights, bounceCount - 1);
+							->Shade(refracRay, refracHit, lights, refBounceCount - 1);
 						currentC += refracC;
 					}
 					else {
@@ -957,7 +968,7 @@ Color MtlBlinn::Shade(
 					if (hResult) {
 						const Node* hitNode = reflectHit.node;
 						reflecC = hitNode->GetMaterial()
-							->Shade(reflecRay, reflectHit, lights, bounceCount - 1);
+							->Shade(reflecRay, reflectHit, lights, refBounceCount - 1);
 						currentC += reflecC;
 					}
 					else {
@@ -971,28 +982,30 @@ Color MtlBlinn::Shade(
 		c /= surfaceSampleCount;
 
 		if (hInfo.front == true) {
+			// Direct illuminations
 			for (int i = 0; i < lightsUsing.size(); i++) {
 				Color currentC = Color(0, 0, 0);
 				Light* l = lightsUsing[i];
+				Color illu = l->Illuminate(hInfo.p, hInfo.N);
+				Color diff = Color(0, 0, 0);
+				Color spec = Color(0, 0, 0);
+
+				Vec3f lDir = l->Direction(hInfo.p) * -1;
+				Vec3f vDir = -ray.dir;
+				Vec3f nDir = baseNDir;
+				Vec3f hDir = (vDir + lDir);
+				hDir = hDir / hDir.Length();
+				float geoTerm = lDir.GetNormalized().Dot(nDir);
+
 				if (l->IsAmbient()) {
-					currentC += l->Illuminate(hInfo.p, hInfo.N) * diffuse.Sample(hInfo.uvw, hInfo.duvw);
+					// discard when using GI
+					//currentC += l->Illuminate(hInfo.p, hInfo.N) * diffuse.Sample(hInfo.uvw, hInfo.duvw);
 				}
 				else {
-					Color illu = l->Illuminate(hInfo.p, hInfo.N);
-					Color diff = Color(0, 0, 0);
-					Color spec = Color(0, 0, 0);
-
-					Vec3f lDir = l->Direction(hInfo.p) * -1;
-					Vec3f vDir = -ray.dir;
-					Vec3f nDir = baseNDir;
-					Vec3f hDir = (vDir + lDir);
-					hDir = hDir / hDir.Length();
-
-					float cosF = lDir.GetNormalized().Dot(nDir);
-					if (cosF <= 0)
-						cosF = 0;
+					if (geoTerm <= 0)
+						geoTerm = 0;
 					else {
-						diff = illu * cosF;
+						diff = illu * geoTerm;
 						float specValue = hDir.Dot(nDir);
 						if (specValue < 0)
 							specValue = 0;
@@ -1007,6 +1020,101 @@ Color MtlBlinn::Shade(
 				}
 				c += currentC;
 			}
+			// Indirect illuminations
+			if (giBounceCount > 0) {
+				// generate coordinates
+				Vec3f zdir = baseNDir;
+				Vec3f randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+				randomDir.Normalize();
+				Vec3f xdir = zdir.Cross(randomDir);
+				while (xdir.Length() < 0.75f) {
+					randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+					randomDir.Normalize();
+					xdir = zdir.Cross(randomDir);
+				}
+				xdir.Normalize();
+				Vec3f ydir = zdir.Cross(xdir);
+
+				// indirect diffuse
+				Color giDiffuse = Color(0, 0, 0);
+
+				// uniform sampling
+				{
+					//for (int i = 0; i < max_gi_sample; i++) {
+					//	Color currentC = Color(0, 0, 0);
+
+					//	float x = MyRandom(1);
+					//	float cosTheta = 1 - x;
+					//	float sinTheta = sqrt(1 - cosTheta * cosTheta);
+					//	float phi = MyRandom(2 * Pi<float>());
+
+					//	float xWeight = sinTheta * cosf(phi);
+					//	float yWeight = sinTheta * sinf(phi);
+					//	float zWeight = cosTheta;
+
+					//	Vec3f omegaDir = xWeight * xdir + yWeight * ydir + zWeight * zdir;
+					//	Color gi = Color(0, 0, 0);
+
+					//	Ray giDiffRay = Ray(hInfo.p, omegaDir);
+					//	HitInfo giDiffHInfo = HitInfo();
+					//	bool hResult = RayToNode(giDiffRay, giDiffHInfo, &rootNode, HIT_FRONT);
+					//	if (hResult) {
+					//		const Node* hitNode = giDiffHInfo.node;
+					//		gi = hitNode->GetMaterial()->Shade(giDiffRay, giDiffHInfo, lights, refBounceCount - 1, giBounceCount - 1);
+					//	}
+					//	else {
+					//		gi = environment.SampleEnvironment(omegaDir);
+					//	}
+
+					//	float geoTerm = omegaDir.Dot(baseNDir);
+					//	if (geoTerm > 0.01f) {
+					//		currentC = gi * geoTerm * diffuse.Sample(hInfo.uvw, hInfo.duvw);
+					//	}
+					//	giDiffuse += currentC;
+					//}
+					//giDiffuse = giDiffuse / max_gi_sample;
+					////giDiffuse *= (Pi<float>() * 2);
+				}
+				// cosine-weighted sampling
+				{
+					for (int i = 0; i < max_gi_sample; i++) {
+						Color currentC = Color(0, 0, 0);
+						float x = MyRandom(1);
+						float cosTheta = sqrt(x);
+						float phi = MyRandom(2 * Pi<float>());
+						float zWeight = sqrt(1 - x);
+						float xWeight = cosf(phi) * cosTheta;
+						float yWeight = sinf(phi) * cosTheta;
+
+						Vec3f omegaDir = xWeight * xdir + yWeight * ydir + zWeight * zdir;
+						Color gi = Color(0, 0, 0);
+
+						Ray giDiffRay = Ray(hInfo.p, omegaDir);
+						HitInfo giDiffHInfo = HitInfo();
+						bool hResult = RayToNode(giDiffRay, giDiffHInfo, &rootNode, HIT_FRONT);
+						if (hResult) {
+							const Node* hitNode = giDiffHInfo.node;
+							gi = hitNode->GetMaterial()->Shade(giDiffRay, giDiffHInfo, lights, refBounceCount - 1, giBounceCount - 1);
+						}
+						else {
+							gi = environment.SampleEnvironment(omegaDir);
+						}
+
+						float geoTerm = omegaDir.Dot(baseNDir);
+						if (geoTerm > 0.01f) {
+							currentC = gi * geoTerm * diffuse.Sample(hInfo.uvw, hInfo.duvw);
+						}
+						giDiffuse += currentC;
+					}
+					giDiffuse = giDiffuse / max_gi_sample;
+					//giDiffuse *= (Pi<float>());
+				}
+				// indirect specular
+
+				c += giDiffuse;
+			}
+
+			// emmisive
 		}
 	}
 	return c;
@@ -1448,6 +1556,10 @@ Color PointLight::Illuminate(Vec3f const& p, Vec3f const& N) const {
 
 		Vec3f currentDir = centerDir + (randX * coordDir1 + randY * coordDir2) * randRadius;
 		float currentShadow = Shadow(Ray(p, currentDir), 1);
+
+		if (size == 0) {
+			return currentShadow * intensity;
+		}
 
 		if (i == 0) {
 			firstShadow = currentShadow;
