@@ -2,7 +2,7 @@
 ///
 /// \file       viewport.cpp 
 /// \author     Cem Yuksel (www.cemyuksel.com)
-/// \version    9.0
+/// \version    11.0
 /// \date       August 21, 2019
 ///
 /// \brief Example source for CS 6620 - University of Utah.
@@ -45,7 +45,6 @@ extern TexturedColor background;
 extern char prjRender[];
 extern char prjZRender[];
 extern char prjCRender[];
-
 //-------------------------------------------------------------------------------
 
 enum Mode {
@@ -60,6 +59,7 @@ enum ViewMode
 	VIEWMODE_IMAGE,
 	VIEWMODE_Z,
 	VIEWMODE_SAMPLECOUNT,
+	VIEWMODE_IRRADCOMP,
 };
 
 enum MouseMode {
@@ -382,6 +382,11 @@ void GlutDisplay()
 		if (!renderImage.GetSampleCountImage()) renderImage.ComputeSampleCountImage();
 		DrawImage(renderImage.GetSampleCountImage(), GL_UNSIGNED_BYTE, GL_LUMINANCE);
 		break;
+	case VIEWMODE_IRRADCOMP:
+		if (renderImage.GetIrradianceComputationImage()) {
+			DrawImage(renderImage.GetIrradianceComputationImage(), GL_UNSIGNED_BYTE, GL_LUMINANCE);
+		}
+		break;
 	}
 
 	glutSwapBuffers();
@@ -407,6 +412,7 @@ void GlutIdle()
 			}
 			glutPostRedisplay();
 		}
+		if (viewMode == VIEWMODE_IRRADCOMP) glutPostRedisplay();
 	}
 }
 
@@ -474,6 +480,10 @@ void GlutKeyboard(unsigned char key, int x, int y)
 		glutPostRedisplay();
 		break;
 	case '5':
+		viewMode = VIEWMODE_IRRADCOMP;
+		glutPostRedisplay();
+		break;
+	case '6':
 		renderImage.SaveImage(prjRender);
 		renderImage.SaveZImage(prjZRender);
 		renderImage.SaveSampleCountImage(prjCRender);
@@ -612,6 +622,8 @@ void MtlBlinn::SetViewportMaterial(int subMtlID) const
 	c = ColorA(specular.GetColor());
 	glMaterialfv(GL_FRONT, GL_SPECULAR, &c.r);
 	glMaterialf(GL_FRONT, GL_SHININESS, glossiness * 1.5f);
+	c = ColorA(emission.GetColor());
+	glMaterialfv(GL_FRONT, GL_EMISSION, &c.r);
 	const TextureMap* dm = diffuse.GetTexture();
 	if (dm && dm->SetViewportTexture()) {
 		glEnable(GL_TEXTURE_2D);

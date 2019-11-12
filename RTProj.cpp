@@ -275,14 +275,14 @@ float IntersectBox(const Ray &ray, Box box) {
 		return hit;
 	}
 	else {
-		t1 = max(t1, y1);
+		t1 = Max(t1, y1);
 		t2 = Min(t2, y2);
 	}
 	if (t1 > z2 || t2 < z1) {
 		return hit;
 	}
 	else {
-		t1 = max(t1, z1);
+		t1 = Max(t1, z1);
 		t2 = Min(t2, z2);
 	}
 
@@ -792,10 +792,10 @@ Color MtlBlinn::Shade(
 			coordDir2 = baseNDir.Cross(coordDir1);
 
 			if (reflectionGlossiness != 0) {
-				randRadius = sinf(reflectionGlossiness);
+				randRadius = tanf(reflectionGlossiness);
 			}
 			else if (refractionGlossiness) {
-				randRadius = sinf(refractionGlossiness);
+				randRadius = tanf(refractionGlossiness);
 			}
 			randRadius = randRadius * randRadius;
 		}
