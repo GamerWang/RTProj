@@ -46,8 +46,8 @@ TexturedColor background;
 TexturedColor environment;
 TextureList textureList;
 
-//char prjName[] = "test11";
-char prjName[] = "prj11";
+char prjName[] = "test11";
+//char prjName[] = "prj11";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
@@ -1068,12 +1068,12 @@ Color MtlBlinn::Shade(
 
 					//	float geoTerm = omegaDir.Dot(baseNDir);
 					//	if (geoTerm > 0.01f) {
-					//		currentC = gi * geoTerm * diffuse.Sample(hInfo.uvw, hInfo.duvw);
+					//		currentC = gi * diffuse.Sample(hInfo.uvw, hInfo.duvw);
 					//	}
 					//	giDiffuse += currentC;
 					//}
 					//giDiffuse = giDiffuse / max_gi_sample;
-					////giDiffuse *= (Pi<float>() * 2);
+					//////giDiffuse *= (Pi<float>() * 2);
 				}
 				// cosine-weighted sampling
 				{
@@ -1102,21 +1102,8 @@ Color MtlBlinn::Shade(
 
 						float geoTerm = omegaDir.Dot(baseNDir);
 						if (geoTerm > 0) {
-							currentC += (gi * geoTerm * diffuse.Sample(hInfo.uvw, hInfo.duvw));
+							currentC += (gi * diffuse.Sample(hInfo.uvw, hInfo.duvw));
 						}
-
-						// Wrong specular calculation
-						//Vec3f vDir = -ray.dir;
-						//Vec3f hDir = (vDir + omegaDir);
-						//hDir = hDir / hDir.Length();
-						//float specTerm = hDir.Dot(baseNDir);
-
-						//if (specTerm < 0)
-						//	specTerm = 0;
-						//else {
-						//	specTerm = pow(specTerm, glossiness);
-						//}
-						//currentC += (gi * specTerm * specular.Sample(hInfo.uvw, hInfo.duvw));
 
 						giDiffuse += currentC;
 					}
