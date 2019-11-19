@@ -68,11 +68,13 @@ public:
 	void SetIntensity(Color intens) { intensity = intens; }
 	void SetPosition(Vec3f pos) { position = pos; }
 	void SetSize(float s) { size = s; }
+	virtual bool  IsPoint() const { return true; }
+	virtual float OverallIntensity() const { return intensity.r + intensity.g + intensity.b; }
 
-private:
 	Color intensity;
 	Vec3f position;
 	float size;
+private:
 };
 
 //-------------------------------------------------------------------------------

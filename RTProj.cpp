@@ -1,4 +1,5 @@
 ﻿// Raytracing Prj1 by Xipeng Wang
+#pragma once
 #include <GL\freeglut.h>
 #include <omp.h>
 #include "scene.h"
@@ -7,6 +8,7 @@
 #include "materials.h"
 #include "lights.h"
 #include "cyTimer.h"
+#include "myHelper.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -21,17 +23,44 @@
 #define longDis 10000.0f
 #define e_cons 2.718281828f
 #define deltaOffset 0.005f
-#define max_refLignt_bounce 3
-#define max_giLight_bounce 1
+#define gamma_term 0.4545454545f
+// normal using constants
+//#define max_refLignt_bounce 3
+//#define max_giLight_bounce 2
+//#define max_variance 0.15f
+//#define max_sampe_count 32
+//#define min_halton_sample 8
+//#define min_shadow_ray 4
+//#define full_shadow_ray 16
+//#define max_gi_sample 1
+//#define min_surface_sample 1
+//#define max_surface_sample 1
+
+// pretty constants
+//#define max_refLignt_bounce 5
+//#define max_giLight_bounce 2
+//#define max_variance 0.15f
+//#define max_sampe_count 64
+//#define min_halton_sample 8
+//#define min_shadow_ray 8
+//#define full_shadow_ray 32
+//#define max_gi_sample 32
+//#define min_surface_sample 1
+//#define max_surface_sample 1
+
+// path tracing constants
+//#define max_light_count 10
+#define max_refLignt_bounce 2
+#define max_giLight_bounce 3
 #define max_variance 0.15f
 #define max_sampe_count 32
 #define min_halton_sample 8
 #define min_shadow_ray 4
 #define full_shadow_ray 16
-#define max_gi_sample 16
+#define max_gi_sample 1
 #define min_surface_sample 1
 #define max_surface_sample 1
-#define gamma_term 0.4545454545f
+
 
 Node rootNode;
 Camera camera;
@@ -46,8 +75,9 @@ TexturedColor background;
 TexturedColor environment;
 TextureList textureList;
 
-char prjName[] = "test11";
-//char prjName[] = "prj11";
+//char prjName[] = "test11";
+char prjName[] = "prj12";
+//char prjName[] = "prj11_pretty";
 char prjSource[30];
 char prjRender[30];
 char prjZRender[30];
@@ -55,6 +85,10 @@ char prjCRender[30];
 
 int LoadScene(char const *filename);
 void ShowViewport();
+
+float MyRandom(float max) {
+	return (float)(rand()) / (float)(RAND_MAX)*max;
+}
 
 class CameraSpaceInfo {
 public:
@@ -80,6 +114,8 @@ public:
 	}
 };
 CameraSpaceInfo csInfo;
+
+ImportanceLightSampler sampler;
 
 struct JitterNode {
 	float squaredWeight;
@@ -301,10 +337,6 @@ float IntersectBox(const Ray &ray, Box box) {
 	return hit;
 }
 
-float MyRandom(float max) {
-	return (float)(rand()) / (float)(RAND_MAX) * max;
-}
-
 // Without Ray Differential
 Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node, Vec2f relativePos) {
 	Color c = Color(0, 0, 0);
@@ -312,7 +344,8 @@ Color ShadePixel(Ray &ray, HitInfo &hInfo, Node *node, Vec2f relativePos) {
 	bool hResult = RayToNode(ray, hInfo, node);
 	if (hResult) {
 		const Node* hitNode = hInfo.node;
-		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, max_refLignt_bounce, max_giLight_bounce);
+		//c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, max_refLignt_bounce, max_giLight_bounce);
+		c = hitNode->GetMaterial()->Shade(ray, hInfo, lights, sampler, max_refLignt_bounce, max_giLight_bounce);
 	}
 	else {
 		// cylinder background mapping
@@ -663,6 +696,7 @@ uint8_t SamplePixelHalton(float posX, float posY, float sampleCount, Color24& co
 		finalColor += currentColor;
 	}
 	finalColor /= sampleCount;
+	finalColor = GammaCorrection(finalColor);
 	color = Color24(finalColor);
 	return sampleCount;
 }
@@ -741,6 +775,14 @@ void BeginRender() {
 		}
 	}
 
+	// generate light source intensity map
+	sampler.Init();
+	for (int i = 0; i < lights.size(); i++) {
+		if (lights[i]->IsPoint()) {
+			sampler.PushValue(lights[i]->OverallIntensity(), i);
+		}
+	}
+	sampler.RecalculateAll();
 
 #pragma omp parallel for
 	for (int j = 0; j < height; j++) {
@@ -749,8 +791,8 @@ void BeginRender() {
 			//Color24 c = CalculatePixelColor(i, j);
 			Color24 c = Color24();
 			//uint8_t currentSampleCount = SamplePixelColorJitteredAdaptive(i, j, 1.0f, c);
-			//uint8_t currentSampleCount = SamplePixelHalton(i, j, 4, c);
-			uint8_t currentSampleCount = SamplePixelHaltonAdaptive(i, j, c);
+			uint8_t currentSampleCount = SamplePixelHalton(i, j, 16, c);
+			//uint8_t currentSampleCount = SamplePixelHaltonAdaptive(i, j, c);
 			//uint8_t currentSampleCount = SamplePixelDepthofField(i, j, 32, c);
 			sample[j * width + i] = currentSampleCount;
 			img[j * width + i] = c;
@@ -772,6 +814,8 @@ void StopRender() {
 }
 
 // Outside Functions
+
+// not using path tracing
 Color MtlBlinn::Shade(
 	Ray const &ray,
 	const HitInfo &hInfo,
@@ -1037,6 +1081,7 @@ Color MtlBlinn::Shade(
 
 				// indirect diffuse
 				Color giDiffuse = Color(0, 0, 0);
+				Color giSpecular = Color(0, 0, 0);
 
 				// uniform sampling
 				{
@@ -1087,6 +1132,7 @@ Color MtlBlinn::Shade(
 						float yWeight = sinf(phi) * cosTheta;
 
 						Vec3f omegaDir = xWeight * xdir + yWeight * ydir + zWeight * zdir;
+
 						Color gi = Color(0, 0, 0);
 
 						Ray giDiffRay = Ray(hInfo.p, omegaDir);
@@ -1111,12 +1157,116 @@ Color MtlBlinn::Shade(
 					//giDiffuse *= (Pi<float>());
 				}
 				// indirect specular
+				
+				{
 
-				c += giDiffuse;
+				}
+
+				c = c + giDiffuse + giSpecular;
 			}
 
 			// emmisive
 		}
+	}
+	return c;
+}
+
+// using path tracing
+Color MtlBlinn::Shade(
+	Ray const& ray,
+	const HitInfo& hInfo,
+	const LightList & lightsUsing,
+	ImportanceLightSampler theSampler,
+	int refBounceCount, int giBounceCount) const {
+	Color c = Color(0, 0, 0);
+	if (giBounceCount > 0) {
+		Vec3f inDir = ray.dir * -1;
+		inDir.Normalize();
+		Vec3f nDir = hInfo.N.GetNormalized();
+		Vec3f pos = hInfo.p;
+		
+		int currentLightIndex = theSampler.RandomGet();
+		PointLight* currentLight = (PointLight *)lightsUsing[currentLightIndex];
+
+		// generate gi ray
+		Vec3f sampleDir = Vec3f(0, 0, 0);
+
+		// sample based on light source (direct lighting)
+		float phiDirect = MyRandom(2 * Pi<float>());
+		float xDirect = MyRandom(1);
+		float rDirect = sqrt(xDirect);
+		float p1 = rDirect / (Pi<float>());
+
+		// sample based on brdf
+		float phiIndirect = MyRandom(2 * Pi<float>());
+		float xIndirect = MyRandom(1);
+		float cosThetaIndirect = pow(xIndirect, 1 / (2 * glossiness + 1));
+		float p2 = xIndirect;
+
+		float sampleWeighter = MyRandom(1);
+		//printf("Importances: %f, %f\n", p1, p2);
+		//printf("Intensity: %f\n", currentLight->intensity.r);
+		if (sampleWeighter > p2 / (p1 + p2)) {
+			// using lightsource
+			Vec3f lightPos = currentLight->position;
+			Vec3f centerDir = lightPos - pos;
+			Vec3f nCenterDir = centerDir / centerDir.Length();
+			Vec3f randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+			randomDir.Normalize();
+			Vec3f coordDir1 = nCenterDir.Cross(randomDir);
+			while (coordDir1.Length() < 0.75f) {
+				randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+				randomDir.Normalize();
+				coordDir1 = nCenterDir.Cross(randomDir);
+			}
+			coordDir1.Normalize();
+			Vec3f coordDir2 = nCenterDir.Cross(coordDir1);
+
+			sampleDir = centerDir + rDirect * (coordDir1 * cosf(phiDirect) + coordDir2 * sinf(phiDirect));
+			sampleDir.Normalize();
+		}
+		else {
+			// using brdf
+			Vec3f reflecDir = 2 * nDir.Dot(inDir) * nDir - inDir;
+			reflecDir.Normalize();
+
+			// generate coordinates
+			Vec3f zdir = reflecDir;
+			Vec3f randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+			randomDir.Normalize();
+			Vec3f xdir = zdir.Cross(randomDir);
+			while (xdir.Length() < 0.75f) {
+				randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+				randomDir.Normalize();
+				xdir = zdir.Cross(randomDir);
+			}
+			xdir.Normalize();
+			Vec3f ydir = zdir.Cross(xdir);
+
+			float sinThetaIndirect = sqrt(1 - cosThetaIndirect * cosThetaIndirect);
+			sampleDir = zdir * sinThetaIndirect + cosThetaIndirect * (xdir * cos(phiDirect) + ydir * sin(phiIndirect));
+		}
+		Color directIllumination = currentLight->Illuminate(pos, nDir);
+		Color inDirectIllumination = Color(0, 0, 0);
+		Ray giRay = Ray(hInfo.p, sampleDir);
+		HitInfo giHit = HitInfo();
+		bool hResult = RayToNode(giRay, giHit, &rootNode, HIT_FRONT);
+		if (hResult) {
+			const Node* hitNode = giHit.node;
+			inDirectIllumination = hitNode->GetMaterial()->Shade(giRay, giHit, lights, refBounceCount, giBounceCount - 1);
+		}
+
+		float geoTerm = sampleDir.Dot(nDir);
+		Vec3f hDir = inDir + sampleDir;
+		hDir.Normalize();
+		float specValue = hDir.Dot(nDir);
+		specValue = pow(specValue, glossiness);
+
+		Color finalIllumination = directIllumination + inDirectIllumination;
+		// calculate base on the sample direction
+		Color diffusePart = finalIllumination * (diffuse.Sample(hInfo.uvw, hInfo.duvw) + specValue * specular.Sample(hInfo.uvw, hInfo.duvw));
+
+		c += diffusePart;
 	}
 	return c;
 }

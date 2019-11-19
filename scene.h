@@ -32,6 +32,8 @@
 #include "cyColor.h"
 using namespace cy;
 
+#include "myHelper.h"
+
 //-------------------------------------------------------------------------------
 
 #define BIGFLOAT 1.0e30f
@@ -273,6 +275,9 @@ public:
 	virtual Vec3f Direction(Vec3f const& p) const = 0;
 	virtual bool  IsAmbient() const { return false; }
 	virtual void  SetViewportLight(int lightID) const {}    // used for OpenGL display
+	// my functions
+	virtual bool  IsPoint() const { return false; }
+	virtual float OverallIntensity() const { return 0; }
 };
 
 class LightList : public ItemList<Light> {};
@@ -287,7 +292,7 @@ public:
 	// hInfo: hit information for the point that is being shaded, lights: the light list,
 	// bounceCount: permitted number of additional bounces for reflection and refraction.
 	virtual Color Shade(Ray const& ray, const HitInfo& hInfo, const LightList& lights, int refBounceCount, int giBounceCount = 0) const = 0;
-
+	virtual Color Shade(Ray const& ray, const HitInfo& hInfo, const LightList& lights, ImportanceLightSampler sampler, int refBounceCount, int giBounceCount = 0) const = 0 { return Color(0, 0, 0); }
 	virtual void SetViewportMaterial(int subMtlID = 0) const {}   // used for OpenGL display
 };
 

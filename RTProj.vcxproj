@@ -182,6 +182,8 @@
     </Xml>
     <Xml Include="prj10.xml" />
     <Xml Include="prj11.xml" />
+    <Xml Include="prj11_pretty.xml" />
+    <Xml Include="prj12.xml" />
     <Xml Include="prj2.xml" />
     <Xml Include="prj3.xml" />
     <Xml Include="prj4.xml" />
@@ -223,6 +225,7 @@
     <ClInclude Include="lights.h" />
     <ClInclude Include="lodepng.h" />
     <ClInclude Include="materials.h" />
+    <ClInclude Include="myHelper.h" />
     <ClInclude Include="objects.h" />
     <ClInclude Include="scene.h" />
     <ClInclude Include="texture.h" />

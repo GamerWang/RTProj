@@ -89,6 +89,12 @@
     <Xml Include="test11.xml">
       <Filter>Resource Files</Filter>
     </Xml>
+    <Xml Include="prj11_pretty.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
+    <Xml Include="prj12.xml">
+      <Filter>Resource Files</Filter>
+    </Xml>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cyVector.h">
@@ -167,6 +173,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="texture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="myHelper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
