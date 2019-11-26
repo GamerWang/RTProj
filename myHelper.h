@@ -41,6 +41,7 @@ public:
 				return lightIndex[i];
 			}
 		}
+		return lightIndex[lightsCount - 1];
 	}
 
 private:

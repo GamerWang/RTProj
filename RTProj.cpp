@@ -50,13 +50,13 @@
 
 // path tracing constants
 //#define max_light_count 10
-#define max_refLignt_bounce 2
-#define max_giLight_bounce 3
+#define max_refLignt_bounce 1
+#define max_giLight_bounce 8
 #define max_variance 0.15f
-#define max_sampe_count 32
+#define max_sampe_count 1024
 #define min_halton_sample 8
-#define min_shadow_ray 4
-#define full_shadow_ray 16
+#define min_shadow_ray 1
+#define full_shadow_ray 1
 #define max_gi_sample 1
 #define min_surface_sample 1
 #define max_surface_sample 1
@@ -791,7 +791,7 @@ void BeginRender() {
 			//Color24 c = CalculatePixelColor(i, j);
 			Color24 c = Color24();
 			//uint8_t currentSampleCount = SamplePixelColorJitteredAdaptive(i, j, 1.0f, c);
-			uint8_t currentSampleCount = SamplePixelHalton(i, j, 16, c);
+			uint8_t currentSampleCount = SamplePixelHalton(i, j, max_sampe_count, c);
 			//uint8_t currentSampleCount = SamplePixelHaltonAdaptive(i, j, c);
 			//uint8_t currentSampleCount = SamplePixelDepthofField(i, j, 32, c);
 			sample[j * width + i] = currentSampleCount;
@@ -1191,47 +1191,73 @@ Color MtlBlinn::Shade(
 		// generate gi ray
 		Vec3f sampleDir = Vec3f(0, 0, 0);
 
-		// sample based on light source (direct lighting)
-		float phiDirect = MyRandom(2 * Pi<float>());
-		float xDirect = MyRandom(1);
-		float rDirect = sqrt(xDirect);
-		float p1 = rDirect / (Pi<float>());
+		//// sample based on light source (direct lighting)
+		//float phiDirect = MyRandom(2 * Pi<float>());
+		//float xDirect = MyRandom(1);
+		//float rDirect = sqrt(xDirect);
+		//float p1 = rDirect / (Pi<float>());
 
-		// sample based on brdf
-		float phiIndirect = MyRandom(2 * Pi<float>());
-		float xIndirect = MyRandom(1);
-		float cosThetaIndirect = pow(xIndirect, 1 / (2 * glossiness + 1));
-		float p2 = xIndirect;
+		//// sample based on brdf
+		//float phiIndirect = MyRandom(2 * Pi<float>());
+		//float xIndirect = MyRandom(1);
+		//float cosThetaIndirect = pow(xIndirect, 1 / (2 * glossiness + 1));
+		////float p2 = pow(cosThetaIndirect, 2 * glossiness);
+		//float p2 = pow(cosThetaIndirect, 2 * glossiness) * (glossiness + 2) / (2 * Pi<float>());
 
-		float sampleWeighter = MyRandom(1);
-		//printf("Importances: %f, %f\n", p1, p2);
-		//printf("Intensity: %f\n", currentLight->intensity.r);
-		if (sampleWeighter > p2 / (p1 + p2)) {
-			// using lightsource
-			Vec3f lightPos = currentLight->position;
-			Vec3f centerDir = lightPos - pos;
-			Vec3f nCenterDir = centerDir / centerDir.Length();
-			Vec3f randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
-			randomDir.Normalize();
-			Vec3f coordDir1 = nCenterDir.Cross(randomDir);
-			while (coordDir1.Length() < 0.75f) {
-				randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
-				randomDir.Normalize();
-				coordDir1 = nCenterDir.Cross(randomDir);
-			}
-			coordDir1.Normalize();
-			Vec3f coordDir2 = nCenterDir.Cross(coordDir1);
+		//bool samplingLightSource = true;
+		//float sampleWeighter = MyRandom(1);
+		////printf("Importances: %f, %f\n", p1, p2);
+		////printf("Glossiness: %f\n", glossiness);
+		////printf("Intensity: %f\n", currentLight->intensity.r);
+		//if (sampleWeighter > p2 / (p1 + p2)) {
+		////if (false) {
+		//	// using lightsource
+		//	Vec3f lightPos = currentLight->position;
+		//	Vec3f centerDir = lightPos - pos;
+		//	Vec3f nCenterDir = centerDir / centerDir.Length();
+		//	Vec3f randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+		//	randomDir.Normalize();
+		//	Vec3f coordDir1 = nCenterDir.Cross(randomDir);
+		//	while (coordDir1.Length() < 0.75f) {
+		//		randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+		//		randomDir.Normalize();
+		//		coordDir1 = nCenterDir.Cross(randomDir);
+		//	}
+		//	coordDir1.Normalize();
+		//	Vec3f coordDir2 = nCenterDir.Cross(coordDir1);
 
-			sampleDir = centerDir + rDirect * (coordDir1 * cosf(phiDirect) + coordDir2 * sinf(phiDirect));
-			sampleDir.Normalize();
-		}
-		else {
-			// using brdf
-			Vec3f reflecDir = 2 * nDir.Dot(inDir) * nDir - inDir;
-			reflecDir.Normalize();
+		//	sampleDir = centerDir + rDirect * (coordDir1 * cosf(phiDirect) + coordDir2 * sinf(phiDirect));
+		//	sampleDir.Normalize();
+		//}
+		//else {
+		//	samplingLightSource = false;
+		//	// using brdf
+		//	Vec3f reflecDir = 2 * nDir.Dot(inDir) * nDir - inDir;
+		//	reflecDir.Normalize();
 
-			// generate coordinates
-			Vec3f zdir = reflecDir;
+		//	// generate coordinates
+		//	Vec3f zdir = reflecDir;
+		//	Vec3f randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+		//	randomDir.Normalize();
+		//	Vec3f xdir = zdir.Cross(randomDir);
+		//	while (xdir.Length() < 0.75f) {
+		//		randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
+		//		randomDir.Normalize();
+		//		xdir = zdir.Cross(randomDir);
+		//	}
+		//	xdir.Normalize();
+		//	Vec3f ydir = zdir.Cross(xdir);
+
+		//	float sinThetaIndirect = sqrt(1 - cosThetaIndirect * cosThetaIndirect);
+		//	sampleDir = zdir * sinThetaIndirect + cosThetaIndirect * (xdir * cosf(phiDirect) + ydir * sinf(phiIndirect));
+		//}
+
+		// unifrom random dir
+		{
+			float phiUnifrom = MyRandom(2 * Pi<float>());
+			float thetaUniform = MyRandom(Pi<float>() / 2);
+
+			Vec3f zdir = nDir;
 			Vec3f randomDir = Vec3f(MyRandom(1), MyRandom(1), MyRandom(1));
 			randomDir.Normalize();
 			Vec3f xdir = zdir.Cross(randomDir);
@@ -1243,30 +1269,79 @@ Color MtlBlinn::Shade(
 			xdir.Normalize();
 			Vec3f ydir = zdir.Cross(xdir);
 
-			float sinThetaIndirect = sqrt(1 - cosThetaIndirect * cosThetaIndirect);
-			sampleDir = zdir * sinThetaIndirect + cosThetaIndirect * (xdir * cos(phiDirect) + ydir * sin(phiIndirect));
+			//sampleDir = zdir * sinf(thetaUniform) + cosf(thetaUniform) * (xdir * cos(phiUnifrom) + ydir * sinf(phiUnifrom));
+			float uniformX = 2 * MyRandom(1) - 1;
+			float uniformY = 2 * MyRandom(1) - 1;
+			float uniformZ = MyRandom(1);
+			while (uniformX * uniformX + uniformY * uniformY + uniformZ * uniformZ > 1) {
+				uniformX = 2 * MyRandom(1) - 1;
+				uniformY = 2 * MyRandom(1) - 1;
+				uniformZ = MyRandom(1);
+			}
+			sampleDir = uniformX * xdir + uniformY * ydir + uniformZ * zdir;
+			sampleDir.Normalize();
 		}
-		Color directIllumination = currentLight->Illuminate(pos, nDir);
-		Color inDirectIllumination = Color(0, 0, 0);
+
+		bool mightHitLight = false;
+		Color Illumination = Color(0, 0, 0);
+
+		float closestTtoLight = (currentLight->position - hInfo.p).Dot(sampleDir) / sampleDir.Dot(sampleDir);
+		Vec3f closestPointToLight = hInfo.p + closestTtoLight * sampleDir;
+		float closestDistanceToLight = (closestPointToLight - currentLight->position).Length();
+
+		if (closestTtoLight > 0 && closestDistanceToLight < currentLight->size) {
+			mightHitLight = true;
+		}
+
 		Ray giRay = Ray(hInfo.p, sampleDir);
 		HitInfo giHit = HitInfo();
 		bool hResult = RayToNode(giRay, giHit, &rootNode, HIT_FRONT);
 		if (hResult) {
-			const Node* hitNode = giHit.node;
-			inDirectIllumination = hitNode->GetMaterial()->Shade(giRay, giHit, lights, refBounceCount, giBounceCount - 1);
+			if (mightHitLight) {
+				if (giHit.z > closestTtoLight) {
+					Illumination = currentLight->intensity;
+				}
+				else {
+					const Node* hitNode = giHit.node;
+					Illumination = hitNode->GetMaterial()->Shade(giRay, giHit, lights, theSampler, refBounceCount, giBounceCount - 1);
+				}
+			}
+			else {
+				const Node* hitNode = giHit.node;
+				Illumination = hitNode->GetMaterial()->Shade(giRay, giHit, lights, theSampler, refBounceCount, giBounceCount - 1);
+			}
+		}
+		else {
+			if (mightHitLight) {
+				Illumination = currentLight->intensity;
+			}
+			else {
+				Illumination = environment.SampleEnvironment(sampleDir);
+			}
 		}
 
 		float geoTerm = sampleDir.Dot(nDir);
+		if (geoTerm < 0) {
+			geoTerm = 0;
+		}
 		Vec3f hDir = inDir + sampleDir;
 		hDir.Normalize();
 		float specValue = hDir.Dot(nDir);
+		if (specValue < 0) {
+			specValue = 0;
+		}
 		specValue = pow(specValue, glossiness);
+		//printf("Glossiness: %f\n", glossiness);
+		//printf("SpecValue: %f\n", specValue);
+		Color brdf = diffuse.Sample(hInfo.uvw, hInfo.duvw) * geoTerm / Pi<float>() +
+			(geoTerm + 2) / (Pi<float>() * 2) * specValue * specular.Sample(hInfo.uvw, hInfo.duvw);
 
-		Color finalIllumination = directIllumination + inDirectIllumination;
+		Color finalIllumination = Illumination;
 		// calculate base on the sample direction
-		Color diffusePart = finalIllumination * (diffuse.Sample(hInfo.uvw, hInfo.duvw) + specValue * specular.Sample(hInfo.uvw, hInfo.duvw));
+		Color finalColor = finalIllumination * (2 * Pi<float>()) * brdf;
+		//Color finalColor = specValue * Color(1, 1, 1);
 
-		c += diffusePart;
+		c = finalColor;
 	}
 	return c;
 }
