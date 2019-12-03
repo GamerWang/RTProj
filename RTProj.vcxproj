@@ -184,6 +184,7 @@
     <Xml Include="prj11.xml" />
     <Xml Include="prj11_pretty.xml" />
     <Xml Include="prj12.xml" />
+    <Xml Include="prj13.xml" />
     <Xml Include="prj2.xml" />
     <Xml Include="prj3.xml" />
     <Xml Include="prj4.xml" />
@@ -213,6 +214,7 @@
     <ClInclude Include="cyIVector.h" />
     <ClInclude Include="cyLightingGrid.h" />
     <ClInclude Include="cyMatrix.h" />
+    <ClInclude Include="cyPhotonMap.h" />
     <ClInclude Include="cyPoint.h" />
     <ClInclude Include="cyPointCloud.h" />
     <ClInclude Include="cyQuat.h" />

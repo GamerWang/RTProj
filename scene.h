@@ -278,6 +278,11 @@ public:
 	// my functions
 	virtual bool  IsPoint() const { return false; }
 	virtual float OverallIntensity() const { return 0; }
+
+	// Photon Extensions
+	virtual bool  IsPhotonSource() const { return false; }
+	virtual Color GetPhotonIntensity() const { return Color(0, 0, 0); }
+	virtual Ray   RandomPhoton() const { return Ray(Vec3f(0, 0, 0), Vec3f(0, 0, 1)); }
 };
 
 class LightList : public ItemList<Light> {};
@@ -294,6 +299,9 @@ public:
 	virtual Color Shade(Ray const& ray, const HitInfo& hInfo, const LightList& lights, int refBounceCount, int giBounceCount = 0) const = 0;
 	virtual Color Shade(Ray const& ray, const HitInfo& hInfo, const LightList& lights, ImportanceLightSampler sampler, int refBounceCount, int giBounceCount = 0) const = 0 { return Color(0, 0, 0); }
 	virtual void SetViewportMaterial(int subMtlID = 0) const {}   // used for OpenGL display
+	// Photon Extensions
+	virtual bool IsPhotonSurface(int subMtlID = 0) const { return true; } // if this method returns true, the photon will be stored
+	virtual bool RandomPhotonBounce(Ray& r, Color& c, const HitInfo& hInfo) const { return false; } // if this method returns true, a new photon with the given direction and color will be traced
 };
 
 class MaterialList : public ItemList<Material>

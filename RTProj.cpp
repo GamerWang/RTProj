@@ -8,6 +8,7 @@
 #include "materials.h"
 #include "lights.h"
 #include "cyTimer.h"
+#include "cyPhotonMap.h"
 #include "myHelper.h"
 
 #include <stdio.h>
@@ -53,7 +54,7 @@
 #define max_refLignt_bounce 1
 #define max_giLight_bounce 3
 #define max_variance 0.15f
-#define max_sampe_count 256
+#define max_sampe_count 32
 
 #define min_halton_sample 8
 #define min_shadow_ray 1
@@ -61,7 +62,7 @@
 #define max_gi_sample 1
 #define min_surface_sample 1
 #define max_surface_sample 1
-
+#define max_photon_number 
 
 Node rootNode;
 Camera camera;
@@ -75,9 +76,11 @@ TimerStats timer;
 TexturedColor background;
 TexturedColor environment;
 TextureList textureList;
+PhotonMap photonMap;
+PhotonMap photonMapCaustics;
 
 //char prjName[] = "test11";
-char prjName[] = "prj12";
+char prjName[] = "prj13";
 //char prjName[] = "prj11_pretty";
 char prjSource[30];
 char prjRender[30];
@@ -1334,6 +1337,14 @@ Color MtlBlinn::Shade(
 	return c;
 }
 
+bool MtlBlinn::RandomPhotonBounce(
+	Ray& r, 
+	Color& c, 
+	const HitInfo& hInfo) const {
+
+	return false;
+}
+
 bool Sphere::IntersectRay(Ray const &ray, HitInfo &hInfo, int hitSide) const
 {
 	if (hitSide == HIT_NONE) {
@@ -1812,4 +1823,8 @@ Color PointLight::Illuminate(Vec3f const& p, Vec3f const& N) const {
 	}
 
 	return finalShadow * intensity;
+}
+
+Ray PointLight::RandomPhoton() const {
+	return Ray();
 }

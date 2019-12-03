@@ -64,12 +64,17 @@ public:
 	PointLight() : intensity(0, 0, 0), position(0, 0, 0), size(0) {}
 	virtual Color Illuminate(Vec3f const& p, Vec3f const& N) const;
 	virtual Vec3f Direction(Vec3f const& p) const { return (p - position).GetNormalized(); }
-	virtual void SetViewportLight(int lightID) const { SetViewportParam(lightID, ColorA(0.0f), ColorA(intensity), Vec4f(position, 1.0f)); }
+	virtual void SetViewportLight(int lightID) const;
 	void SetIntensity(Color intens) { intensity = intens; }
 	void SetPosition(Vec3f pos) { position = pos; }
 	void SetSize(float s) { size = s; }
 	virtual bool  IsPoint() const { return true; }
 	virtual float OverallIntensity() const { return intensity.r + intensity.g + intensity.b; }
+
+	// Photon Extensions
+	virtual bool  IsPhotonSource() const { return true; }
+	virtual Color GetPhotonIntensity() const { return intensity; }
+	virtual Ray   RandomPhoton() const;
 
 	Color intensity;
 	Vec3f position;
