@@ -55,7 +55,7 @@
     <material type="blinn" name="mtl1">
       <diffuse  r="0.8" g="0.2" b="0.2"/>
       <specular r="1.0" g="1.0" b="1.0" value="0.7"/>
-      <glossiness value="70"/>
+      <glossiness value="50"/>
     </material>
     <material type="blinn" name="mtl2">
       <diffuse  r="0.2" g="0.8" b="0.2"/>
@@ -65,7 +65,7 @@
 
     <!-- Lights -->
     <light type="point" name="pointLight1">
-      <intensity value="2.9"/>
+      <intensity value="0.5"/>
       <position x="0" y="0" z="22"/>
       <size value="5"/>
     </light>
